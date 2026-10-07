@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audiorec</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></symbol><symbol id="i-settings" viewBox="0 0 24 24"><path d="M10 2h4l.6 2.3 2 1.1 2.3-.6 2 3.5-1.7 1.7v2.4l1.7 1.7-2 3.5-2.3-.6-2 1.1L14 22h-4l-.6-2.3-2-1.1-2.3.6-2-3.5 1.7-1.7v-2.4L3.1 9.9l2-3.5 2.3.6 2-1.1z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></symbol><symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zm12-2c3 2 3 8 0 10"/></symbol><symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zm12 0 5 6m0-6-5 6"/></symbol><symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></symbol><symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M4 3h14l3 3v15H3V3zm3 0v7h10V3M7 21v-8h10v8"/></symbol><symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7h7l2 2h9l-2 11H3L1 9h2z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 18v3h16v-3"/></symbol><symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5 19 19M19 5 5 19"/></symbol><symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zm0 0v4h4M12 11v6m-3-3h6"/></symbol><symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2m3-5v10m4-14v18m4-13v8m4-5v2"/></symbol><symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zm-9 9 9 5 9-5M3 16l9 5 9-5"/></symbol></svg>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"><svg class="icon"><use href="#i-wave"/></svg></span><div><h1>Audiorec</h1><p class="tagline">Record voice-over on top of any video</p></div></div>
+      <div class="header-actions"><button id="open-settings" class="icon-button ghost" type="button" aria-label="Open device settings" aria-haspopup="dialog" aria-controls="device-dialog" title="Device settings (no shortcut)"><svg class="icon"><use href="#i-settings"/></svg></button></div>
+    </header>
+    <section class="panel video-panel" aria-label="Video">
+      <div class="toolbar">
+        <label class="button primary" for="video-file" title="Choose video (no shortcut)"><svg class="icon"><use href="#i-video"/></svg>Choose video</label><input id="video-file" type="file" accept="video/*" hidden>
+        <span id="video-name" class="file-name">No video selected</span>
+        <span class="toolbar-spacer"></span>
+        <button id="video-mute" type="button" aria-pressed="false" title="Mute video audio (no shortcut)"><svg class="icon"><use href="#i-volume"/></svg>Video audio: on</button>
+        <button id="record" class="record" type="button" title="Record (*)"><svg class="icon"><use href="#i-record"/></svg>Record</button>
+        <button class="info-button" type="button" popovertarget="tip-recording" aria-label="How recording works" title="How recording works"><svg class="icon"><use href="#i-info"/></svg></button>
+      </div>
+      <div id="tip-recording" class="tip" popover><h3>Recording</h3><p>Choose a video, enable <strong>REC</strong> on the tracks you want, then press <strong>Record</strong> and speak while it plays.</p><p><kbd>Space</kbd> play / pause · <kbd>*</kbd> start / stop recording</p><p><strong>Video audio</strong> only affects what you hear; it is never exported.</p></div>
+      <div class="video-frame"><video id="video" controls playsinline></video><span id="rec-badge" class="rec-badge" aria-hidden="true">REC</span></div>
+    </section>
+    <section class="panel" aria-label="Audio tracks">
+      <div class="section-heading"><h2><svg class="icon"><use href="#i-layers"/></svg>Audio tracks</h2><div class="heading-actions"><span id="time-display" class="time-display" aria-label="Playback position">00:00.0</span><button id="add-track" type="button" title="Add track (no shortcut)"><svg class="icon"><use href="#i-plus"/></svg>Add track</button><button class="info-button" type="button" popovertarget="tip-tracks" aria-label="How to edit tracks" title="How to edit tracks"><svg class="icon"><use href="#i-info"/></svg></button></div></div>
+      <div id="tip-tracks" class="tip" popover><h3>Editing tracks</h3><p><strong>Drag</strong> a clip to move it; drag its <strong>edges</strong> to trim start and end.</p><p><strong>Double-click</strong> a track or clip name to rename it.</p><p><strong>Click or drag on the ruler</strong> to move through the video. Scale: 80 px = 1 second.</p><p><strong>Mute</strong> silences a track in playback and leaves it out of the WAV.</p></div>
+      <div id="timeline-scroll" class="timeline-scroll"><div id="timeline" class="timeline"><div id="ruler" class="ruler" title="Move video playhead (click or drag)" aria-label="Video position"></div><div id="tracks" class="tracks"></div><div id="playhead" class="playhead" aria-hidden="true"></div></div></div>
+      <div class="transport"><span id="status" role="status" aria-live="polite">Ready</span><button id="new-project" type="button" title="New project (no shortcut)"><svg class="icon"><use href="#i-file-plus"/></svg>New project</button><button id="save-project" type="button" title="Save project (no shortcut)"><svg class="icon"><use href="#i-save"/></svg>Save project</button><button id="open-project-button" type="button" title="Open project (no shortcut)"><svg class="icon"><use href="#i-open"/></svg>Open project</button><input id="open-project" type="file" accept=".audiorec" hidden><button id="export" class="accent" type="button" title="Export WAV (no shortcut)"><svg class="icon"><use href="#i-download"/></svg>Export WAV</button><button class="info-button" type="button" popovertarget="tip-files" aria-label="About saving and exporting" title="About saving and exporting"><svg class="icon"><use href="#i-info"/></svg></button></div>
+      <div id="tip-files" class="tip" popover><h3>Saving &amp; exporting</h3><p>The project <strong>autosaves</strong> in this browser.</p><p><strong>New project</strong> clears the video and all recordings — save a copy first if you want to keep them.</p><p><strong>Save project</strong> writes a <code>.audiorec</code> file (video + recordings). The first time it asks where to save; after that — or after <strong>Open project</strong> — it overwrites the same file.</p><p><strong>Export WAV</strong> mixes the recorded, unmuted tracks only — not the original video audio.</p></div>
+    </section>
+  </main>
+  <dialog id="device-dialog" aria-labelledby="device-title">
+    <div class="dialog-heading"><h2 id="device-title">Devices</h2><form method="dialog"><button type="submit" class="icon-button ghost" aria-label="Close settings" title="Close settings (Esc)"><svg class="icon"><use href="#i-close"/></svg></button></form></div>
+    <div class="devices"><label>Microphone<select id="input-device"><option value="">Default</option></select><span class="field-hint">Needs the page on localhost or HTTPS.</span></label><label>Output<select id="output-device"><option value="">Default</option></select><span class="field-hint">Output selection depends on the browser.</span></label></div>
+    <div class="mic-monitor"><button id="test-mic" type="button" aria-pressed="false" title="Test microphone (no shortcut)"><svg class="icon"><use href="#i-record"/></svg>Test microphone</button><div class="meter-group"><label for="mic-level">Microphone level</label><progress id="mic-level" max="100" value="0">0%</progress></div><span id="mic-state" class="hint">Inactive</span></div>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>
