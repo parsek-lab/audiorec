@@ -934,7 +934,9 @@ function updateMonitor() {
   $('monitor').setAttribute('aria-pressed', String(monitoring));
   $('monitor').title = monitoring ? 'Stop hearing the microphone' : 'Monitor: hear the microphone, use headphones to avoid feedback';
 }
-const micProcessing = () => ({ echoCancellation: !monitoring, noiseSuppression: !monitoring, autoGainControl: !monitoring });
+// Record the raw microphone: with echo cancellation, noise suppression and auto gain on, Chrome attenuates the voice a moment
+// after each phrase starts (worse while the video plays through speakers), so recorded clips fade out.
+const micProcessing = () => ({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
 async function toggleMonitor() {
   monitoring = !monitoring;
   try { localStorage.setItem('audiorec-monitor', monitoring ? 'on' : 'off'); } catch {}
