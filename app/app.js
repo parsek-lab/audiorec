@@ -12,10 +12,10 @@ function updateRecordButton() {
   document.body.classList.toggle('is-recording', recording);
 }
 function updateMicButton() {
-  setIconButton($('test-mic'), 'mic', stream ? 'Microphone on' : 'Turn on microphone', stream ? 'The microphone stays on to show the input level' : 'Turn on the microphone');
+  setIconButton($('test-mic'), stream ? 'stop' : 'record', stream ? 'Stop test' : 'Test microphone', `${stream ? 'Stop microphone test' : 'Test microphone'}`);
   $('test-mic').setAttribute('aria-pressed', String(!!stream));
   $('input-meter').setAttribute('aria-pressed', String(!!stream));
-  $('input-meter').title = stream ? 'Input level' : 'Input level: click to turn on the microphone';
+  $('input-meter').title = stream ? `Input level${recording ? '' : ': click to stop listening'}` : 'Input level: click to listen to the microphone';
 }
 let meterLevel = 0, clipUntil = 0;
 function showInputLevel(peak) {
@@ -934,12 +934,12 @@ function updateMonitor() {
   $('monitor').setAttribute('aria-pressed', String(monitoring));
   $('monitor').title = monitoring ? 'Stop hearing the microphone' : 'Monitor: hear the microphone, use headphones to avoid feedback';
 }
-// The microphone stays open for the meter, so browser voice processing (echo cancellation, noise suppression, auto gain) is
-// always off: with it on, Chrome/Windows duck and gate the app's own playback, and recordings come out pumped and quieter.
-const micProcessing = () => ({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+const micProcessing = () => ({ echoCancellation: !monitoring, noiseSuppression: !monitoring, autoGainControl: !monitoring });
 async function toggleMonitor() {
   monitoring = !monitoring;
   try { localStorage.setItem('audiorec-monitor', monitoring ? 'on' : 'off'); } catch {}
+  if (stream && recording) { for (const track of stream.getAudioTracks()) track.applyConstraints(micProcessing()).catch(() => {}); }
+  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); } }
   if (monitoring && !stream && !recording) {
     if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); }
     else try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
@@ -957,13 +957,6 @@ function stopMonitoring() {
   $('mic-level').value = 0; meterLevel = 0; clipUntil = 0; showInputLevel(0);
   $('mic-state').textContent = 'Inactive';
   updateMicButton();
-}
-let micStarting = null;
-function keepMicOn() {
-  if (recording || stream || !navigator.mediaDevices?.getUserMedia) return micStarting;
-  return micStarting ??= startMonitoring()
-    .catch(error => { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); })
-    .finally(() => { micStarting = null; });
 }
 async function startMonitoring() {
   const audio = getContext(); await audio.resume();
@@ -1015,7 +1008,7 @@ function finishRecording() {
   updateRecordButton();
   $('input-device').disabled = false; $('test-mic').disabled = false; renderTracks(); status('Recording complete. Saving locally…');
   saveProject().then(() => { if ($('status').textContent === 'Recording complete. Saving locally…') status('Recording saved in the browser. Press Play to listen back.'); });
-  keepMicOn();
+  if (monitoring) startMonitoring().catch(() => {});
 }
 async function toggleRecording() {
   if (recording) { finishRecording(); return; }
@@ -1024,7 +1017,7 @@ async function toggleRecording() {
   $('record').disabled = true;
   try {
     const audio = getContext(); await audio.resume();
-    if (!stream) { await micStarting; if (!stream) await startMonitoring(); }
+    if (!stream) await startMonitoring();
     stopPlayback();
     if (!isPlaying()) await play();
     const start = playPosition();
@@ -1039,6 +1032,7 @@ async function toggleRecording() {
     recording = true; updateRecordButton(); stopPlayback();
     $('input-device').disabled = true; $('test-mic').disabled = true; renderTracks(); requestAnimationFrame(updateRecordingPreview); status('Recording…');
   } catch (error) {
+    stopMonitoring();
     for (const track of tracks) delete track.pending;
     status(`Recording not started: ${error.message}`);
   } finally { $('record').disabled = false; }
@@ -1133,7 +1127,7 @@ async function openProject(file, handle = null) {
     });
     if (position !== bytes.byteLength || !Number.isSafeInteger(manifest.nextId) || manifest.nextId <= Math.max(0, ...importedTracks.map(t => t.id))) throw new Error('invalid project file');
     if (!await ask('Open project?', 'The current project will be replaced.', 'Open project', false)) return;
-    stopOvertime(); cursor = null; video.pause(); stopPlayback();
+    stopOvertime(); cursor = null; video.pause(); stopPlayback(); stopMonitoring();
     if (videoURL) URL.revokeObjectURL(videoURL);
     selectedVideo = importedVideo;
     videoURL = importedVideo ? URL.createObjectURL(importedVideo) : null;
@@ -1150,7 +1144,7 @@ async function newProject() {
   const hasContent = selectedVideo || tracks.some(t => t.clips.length);
   const message = hasContent ? 'The current video and recordings will be cleared. Use “Save project” first to keep a copy.' : '';
   if (!await ask('Start a new project?', message, 'New project', !!hasContent)) return;
-  stopOvertime(); cursor = null; video.pause(); stopPlayback();
+  stopOvertime(); cursor = null; video.pause(); stopPlayback(); stopMonitoring();
   if (videoURL) URL.revokeObjectURL(videoURL);
   selectedVideo = null; videoURL = null;
   rememberProjectFile(null);
@@ -1282,21 +1276,21 @@ for (const tip of document.querySelectorAll('.tip, #project-menu, #tracks-menu')
   if (event.newState === 'open') anchorPopover(tip, button);
 });
 $('open-settings').onclick = () => $('device-dialog').showModal();
-$('input-meter').onclick = () => { context?.resume(); keepMicOn(); };
+$('input-meter').onclick = () => { if (!recording) $('test-mic').click(); };
 $('monitor').onclick = toggleMonitor;
 $('play').onclick = togglePlay;
 for (const type of ['play', 'pause', 'ended']) video.addEventListener(type, updatePlayButton);
 updateMonitor();
 $('output-device').onchange = setOutput;
-$('input-device').onchange = () => { if (!recording) { stopMonitoring(); keepMicOn(); } };
+$('input-device').onchange = () => { if (!recording && stream) stopMonitoring(); };
 $('test-mic').onclick = async () => {
-  if (recording || stream) return;
+  if (recording) return;
+  if (stream) { stopMonitoring(); return; }
   if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); return; }
-  context?.resume(); $('test-mic').disabled = true;
-  try { await keepMicOn(); } finally { $('test-mic').disabled = false; }
+  $('test-mic').disabled = true;
+  try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
+  finally { $('test-mic').disabled = false; }
 };
-// The input meter is always on; an AudioContext created before any click starts suspended.
-for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
 document.addEventListener('pointerup', event => {
   const control = event.target instanceof Element && event.target.closest('button, input[type="range"]');
   if (control && !control.closest('dialog')) control.blur();
@@ -1437,4 +1431,6 @@ video.addEventListener('ended', () => {
 });
 navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
 for (const id of ['video-file', 'add-track', 'import-audio', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
-restoreProject(); listDevices(); keepMicOn();
+// An AudioContext created before any click starts suspended (e.g. when restoring a boosted video volume).
+for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
+restoreProject(); listDevices();
