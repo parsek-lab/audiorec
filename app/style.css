@@ -220,6 +220,38 @@ dialog::backdrop{background:rgba(4,6,12,.7);backdrop-filter:blur(6px)}
 .field input{font:500 .95rem var(--font);color:var(--text);background:#0d1019;border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:10px 12px}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 
+.export-dialog{width:min(92vw,520px)}
+.export-dialog h2{display:flex;align-items:center;gap:10px}
+.export-dialog fieldset{margin:0 0 16px;padding:0;border:0;min-width:0}
+.export-dialog legend{padding:0;margin-bottom:8px;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.export-kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.export-kinds legend{grid-column:1/-1}
+.export-kind{position:relative;display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line-strong);cursor:pointer;transition:border-color .15s,background .15s}
+.export-kind:hover{background:rgba(255,255,255,.06)}
+.export-kind input{position:absolute;opacity:0;pointer-events:none}
+.export-kind .icon{flex:none;width:22px;height:22px;color:var(--subtle)}
+.export-kind-text{display:grid;gap:3px;min-width:0}
+.export-kind-text strong{font-size:.92rem;font-weight:600}
+.export-kind:has(input:checked){border-color:var(--accent);background:rgba(139,123,255,.12);box-shadow:0 0 0 1px var(--accent) inset}
+.export-kind:has(input:checked) .icon{color:var(--accent)}
+.export-kind:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.export-kind:has(input:disabled){opacity:.45;cursor:not-allowed}
+.export-check{display:flex;align-items:center;gap:10px;margin:0 0 18px;font-size:.88rem;color:var(--text);cursor:pointer}
+.export-check input{width:17px;height:17px;accent-color:var(--accent);flex:none}
+.export-check:has(input:disabled){opacity:.45;cursor:not-allowed}
+.export-check .field-hint{display:block}
+.export-range-fields{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;align-items:end;gap:8px}
+.export-range-fields .field{margin:0}
+.export-range-fields input{min-width:0;font-family:var(--mono);font-size:.9rem}
+.export-playhead,.export-range-presets button{padding:9px 11px;font-size:.78rem;color:var(--subtle);background:#0b0e16;border-color:var(--line)}
+.export-range-presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.export-summary{font:500 .82rem var(--mono);color:var(--accent-2)}
+.export-summary.error{color:var(--warn)}
+.export-progress{width:100%;height:6px;margin-top:10px;accent-color:var(--accent)}
+@media (max-width:520px){.export-kinds{grid-template-columns:1fr}.export-range-fields{grid-template-columns:minmax(0,1fr) auto}}
+.menu-button{gap:8px;padding:8px 14px 8px 11px;font-weight:600;font-size:.88rem;background:var(--raised);border-color:var(--line-strong)}
+.menu-button .icon{width:18px;height:18px;color:var(--accent)}
+.menu-button:hover,.menu-button.open{border-color:var(--accent);background:rgba(139,123,255,.14)}
 /* Custom tooltips (see the tooltip block at the end of app.js) */
 .tooltip{position:fixed;inset:auto;margin:0;max-width:min(300px,calc(100vw - 16px));padding:6px 10px;display:none;align-items:center;gap:8px;background:linear-gradient(180deg,#1b2031,#141826);color:var(--text);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);font:500 .78rem/1.4 var(--font);pointer-events:none}
 .tooltip:popover-open{display:flex;animation:tooltip-in .12s ease-out}

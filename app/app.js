@@ -1180,35 +1180,164 @@ async function newProject() {
   tracks.splice(0, tracks.length, { id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   renderTracks(); await saveProject(); status('New project started.');
 }
-function exportWav() {
+// Export: audio only (WAV) or video + audio (MP4 with the original video packets copied and the new mix as soundtrack),
+// over a chosen range. The mix is rendered offline with the same clip scheduling and fades as syncPlayback.
+const MEDIABUNNY = 'https://cdn.jsdelivr.net/npm/mediabunny@1.59.1/dist/bundles/mediabunny.min.mjs';
+const canExportVideo = 'AudioEncoder' in window && 'EncodedAudioChunk' in window;
+let exporting = null, decodedVideoAudio = null;
+const exportVideoAudio = { audio: false, video: true };
+const exportKind = () => document.querySelector('input[name="export-kind"]:checked').value;
+const videoDuration = () => selectedVideo && Number.isFinite(video.duration) ? video.duration : 0;
+const exportBaseName = () => (projectName || 'project').replace(/\.audiorec$/i, '').replace(/[\/:*?"<>|]/g, '-');
+const exportFileName = kind => `${exportBaseName()}${kind === 'video' ? '.mp4' : '-audio.wav'}`;
+function defaultExportEnd(kind) {
+  const end = projectLength() || clipsEnd();
+  return kind === 'video' ? Math.min(end || videoDuration(), videoDuration()) : end;
+}
+function readExportRange() {
+  const start = $('export-start').value.trim() ? parseLength($('export-start').value) : 0, end = parseLength($('export-end').value);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { error: 'Start and end: use mm:ss:ff, mm:ss or seconds.' };
+  if (end <= start) return { error: 'The end must come after the start.' };
+  if (exportKind() === 'video' && end > videoDuration() + .001) return { error: `The video ends at ${formatTime(videoDuration())}.` };
+  return { start, end };
+}
+function setExportRange(start, end) { $('export-start').value = formatTime(start); $('export-end').value = formatTime(end); updateExportDialog(); }
+function updateExportDialog() {
+  const kind = exportKind(), check = $('export-video-audio'), range = readExportRange();
+  check.disabled = !!exporting || !selectedVideo || videoAudio?.state === 'none';
+  check.checked = !check.disabled && exportVideoAudio[kind];
+  $('export-summary').textContent = range.error || `${formatTime(range.end - range.start)} long · ${exportFileName(kind)}`;
+  $('export-summary').classList.toggle('error', !!range.error);
+  $('export-ok').disabled = !!range.error || !!exporting;
+  $('export-selection').disabled = !!exporting || !selectedClips.size;
+}
+function openExport() {
   if (recording) finishRecording();
-  const clips = tracks.filter(t => !t.muted).flatMap(t => t.clips);
-  if (!clips.length) { status('No unmuted recordings to export.'); return; }
-  const rate = context.sampleRate;
-  const length = projectLength() ? Math.max(1, Math.round(projectLength() * rate)) : Math.max(1, ...clips.map(c => Math.ceil((c.start + clipDuration(c)) * rate)));
-  if (length * 2 + 44 > 0xffffffff) { status('Recording too long for a single WAV.'); return; }
-  const mix = new Float32Array(length);
-  for (const track of tracks) for (const clip of track.muted ? [] : track.clips) {
-    const data = channel(clip.buffer), start = Math.round(clip.start * rate), volume = track.volume ?? 1;
-    const trim = Math.round((clip.trimStart || 0) * rate), count = Math.round(clipDuration(clip) * rate);
-    const fadeSamples = Math.min(Math.round(FADE_SECONDS * rate), (count - 1) / 2);
-    for (let i = 0; i < count && trim + i < data.length && start + i < length; i++) {
-      const gain = fadeSamples > 0 ? Math.min(1, i / fadeSamples, (count - 1 - i) / fadeSamples) : 0;
-      mix[start + i] += data[trim + i] * gain * volume;
+  const hasVideo = videoDuration() > 0, videoRadio = $('export-kind-video');
+  videoRadio.disabled = !hasVideo || !canExportVideo;
+  $('export-video-hint').textContent = !hasVideo ? 'Choose a video first' : !canExportVideo ? 'Not supported in this browser' : 'MP4: original picture, new soundtrack';
+  if (videoRadio.disabled && videoRadio.checked) document.querySelector('input[name="export-kind"][value="audio"]').checked = true;
+  $('export-progress').hidden = true;
+  setExportRange(0, defaultExportEnd(exportKind()));
+  $('export-dialog').showModal();
+}
+for (const radio of document.querySelectorAll('input[name="export-kind"]')) radio.onchange = () => {
+  if (exportKind() === 'video' && parseLength($('export-end').value) > videoDuration()) $('export-end').value = formatTime(defaultExportEnd('video'));
+  updateExportDialog();
+};
+$('export-video-audio').onchange = event => { exportVideoAudio[exportKind()] = event.target.checked; };
+for (const id of ['export-start', 'export-end']) $(id).addEventListener('input', updateExportDialog);
+$('export-start-playhead').onclick = () => { $('export-start').value = formatTime(playPosition()); updateExportDialog(); };
+$('export-end-playhead').onclick = () => { $('export-end').value = formatTime(playPosition()); updateExportDialog(); };
+$('export-whole').onclick = () => setExportRange(0, defaultExportEnd(exportKind()));
+$('export-selection').onclick = () => {
+  const clips = [...selectedClips];
+  if (clips.length) setExportRange(Math.min(...clips.map(c => c.start)), Math.max(...clips.map(c => c.start + clipDuration(c))));
+};
+$('export-cancel').onclick = $('export-close').onclick = () => $('export-dialog').close();
+$('export-dialog').addEventListener('close', () => { if (exporting) { exporting.canceled = true; exporting.conversion?.cancel(); } });
+$('export-dialog').querySelector('form').onsubmit = event => { event.preventDefault(); runExport(); };
+async function decodeVideoAudio(rate) {
+  if (decodedVideoAudio?.file === selectedVideo && decodedVideoAudio.rate === rate) return decodedVideoAudio.buffer;
+  if (selectedVideo.size > 1.5e9) throw new Error('the video is too large to read its audio');
+  let buffer;
+  try { buffer = await new OfflineAudioContext(2, 1, rate).decodeAudioData(await selectedVideo.arrayBuffer()); }
+  catch { throw new Error('the video audio could not be read'); }
+  decodedVideoAudio = { file: selectedVideo, rate, buffer };
+  return buffer;
+}
+function renderMix(start, end, rate, channels, videoBuffer) {
+  const length = Math.max(1, Math.round((end - start) * rate));
+  if (length * channels * 4 > 2e9) throw new Error('the range is too long to export at once');
+  const offline = new OfflineAudioContext(channels, length, rate);
+  if (videoBuffer && start < videoBuffer.duration) {
+    const node = offline.createBufferSource(), level = offline.createGain();
+    node.buffer = videoBuffer; level.gain.value = videoGain;
+    node.connect(level); level.connect(offline.destination); node.start(0, start);
+  }
+  for (const track of tracks) {
+    if (track.muted) continue;
+    for (const clip of track.clips) {
+      const duration = clipDuration(clip), elapsed = Math.max(0, start - clip.start);
+      if (duration <= 0 || elapsed >= duration || clip.start >= end) continue;
+      const startTime = Math.max(0, clip.start - start), fade = Math.min(FADE_SECONDS, duration / 2);
+      const node = offline.createBufferSource(), gain = offline.createGain(), level = offline.createGain();
+      level.gain.value = track.volume ?? 1;
+      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(offline.destination);
+      gain.gain.setValueAtTime(fadeGain(elapsed, duration, fade), startTime);
+      if (elapsed < fade) gain.gain.linearRampToValueAtTime(1, startTime + fade - elapsed);
+      if (elapsed < duration - fade) gain.gain.setValueAtTime(1, startTime + duration - fade - elapsed);
+      gain.gain.linearRampToValueAtTime(0, startTime + duration - elapsed);
+      node.start(startTime, (clip.trimStart || 0) + elapsed, duration - elapsed);
     }
   }
-  const bytes = new ArrayBuffer(44 + length * 2), view = new DataView(bytes);
-  const text = (at, value) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
-  text(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-  text(36, 'data'); view.setUint32(40, length * 2, true);
-  for (let i = 0; i < length; i++) { const sample = Math.max(-1, Math.min(1, mix[i])); view.setInt16(44 + i * 2, sample < 0 ? sample * 32768 : sample * 32767, true); }
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
-  const fileName = `${(projectName || 'project').replace(/\.audiorec$/i, '').replace(/[\/:*?"<>|]/g, '-')}-audio.wav`;
-  const link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 60000); status(`WAV exported as ${fileName}.`);
+  return offline.startRendering();
 }
+function wavBlob(buffer) {
+  const channels = buffer.numberOfChannels, length = buffer.length, rate = buffer.sampleRate, size = length * channels * 2;
+  if (size + 44 > 0xffffffff) throw new Error('the range is too long for a single WAV');
+  const data = Array.from({ length: channels }, (_, c) => buffer.getChannelData(c));
+  const bytes = new ArrayBuffer(44 + size), view = new DataView(bytes);
+  const text = (at, value) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
+  text(0, 'RIFF'); view.setUint32(4, 36 + size, true); text(8, 'WAVE'); text(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * channels * 2, true); view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true);
+  text(36, 'data'); view.setUint32(40, size, true);
+  for (let i = 0, at = 44; i < length; i++) for (let c = 0; c < channels; c++, at += 2) { const sample = Math.max(-1, Math.min(1, data[c][i])); view.setInt16(at, sample < 0 ? sample * 32768 : sample * 32767, true); }
+  return new Blob([bytes], { type: 'audio/wav' });
+}
+async function muxVideo(mix, { start, end }, job) {
+  const mb = await import(MEDIABUNNY);
+  const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.BlobSource(selectedVideo) });
+  const output = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
+  const conversion = job.conversion = await mb.Conversion.init({ input, output, composable: true, tracks: 'primary', audio: { discard: true }, trim: { start, end }, showWarnings: false });
+  if (!conversion.utilizedTracks.some(track => track.isVideoTrack())) throw new Error('the video track cannot be written to an MP4');
+  const [codec] = await mb.getEncodableAudioCodecs(['aac', 'opus'], { numberOfChannels: mix.numberOfChannels, sampleRate: mix.sampleRate });
+  if (!codec) throw new Error('this browser cannot encode the audio');
+  const audio = new mb.AudioBufferSource({ codec, bitrate: mb.QUALITY_HIGH });
+  output.addAudioTrack(audio);
+  conversion.onProgress = progress => { $('export-progress').value = progress; };
+  await output.start();
+  await Promise.all([conversion.execute(), audio.add(mix).then(() => audio.close())]);
+  if (job.canceled) throw new Error('canceled');
+  await output.finalize();
+  return new Blob([output.target.buffer], { type: 'video/mp4' });
+}
+async function runExport() {
+  const range = readExportRange(), kind = exportKind();
+  if (range.error || exporting) return;
+  const withVideoAudio = $('export-video-audio').checked;
+  if (kind === 'audio' && !withVideoAudio && !tracks.some(t => !t.muted && t.clips.length)) { status('No unmuted recordings to export.'); return; }
+  const job = exporting = { canceled: false }, progress = $('export-progress'), name = exportFileName(kind);
+  for (const element of $('export-dialog').querySelectorAll('input, .export-range button')) element.disabled = true;
+  progress.hidden = false; progress.removeAttribute('value');
+  $('export-summary').textContent = withVideoAudio ? 'Reading the video audio…' : 'Mixing…';
+  $('export-ok').disabled = true;
+  try {
+    const rate = kind === 'video' ? 48000 : context?.sampleRate || 48000;
+    const videoBuffer = withVideoAudio ? await decodeVideoAudio(rate) : null;
+    if (job.canceled) return;
+    $('export-summary').textContent = 'Mixing…';
+    const mix = await renderMix(range.start, range.end, rate, kind === 'video' || videoBuffer?.numberOfChannels > 1 ? 2 : 1, videoBuffer);
+    if (job.canceled) return;
+    if (kind === 'video') { $('export-summary').textContent = 'Writing the video…'; progress.value = 0; }
+    const blob = kind === 'video' ? await muxVideo(mix, range, job) : wavBlob(mix);
+    if (job.canceled) return;
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    status(`Exported ${name} (${formatTime(range.start)} – ${formatTime(range.end)}).`);
+    exporting = null; $('export-dialog').close();
+  } catch (error) {
+    if (!job.canceled) status(`Export failed: ${error.message}`);
+  } finally {
+    if (exporting === job) exporting = null;
+    for (const element of $('export-dialog').querySelectorAll('input')) element.disabled = false;
+    for (const element of $('export-dialog').querySelectorAll('.export-range button')) element.disabled = false;
+    if ($('export-dialog').open) { progress.hidden = true; openExportControls(); }
+  }
+}
+function openExportControls() { $('export-kind-video').disabled = videoDuration() <= 0 || !canExportVideo; updateExportDialog(); }
 $('video-file').onchange = event => {
   const file = event.target.files[0]; if (!file) return;
   stopOvertime(); cursor = null;
@@ -1272,7 +1401,7 @@ $('timeline-scroll').addEventListener('drop', event => {
 $('undo').onclick = undo;
 $('redo').onclick = redo;
 $('record').onclick = toggleRecording;
-$('export').onclick = exportWav;
+$('export').onclick = openExport;
 $('new-project').onclick = newProject;
 $('save-project').onclick = saveProjectFile;
 $('open-project-button').onclick = async () => {

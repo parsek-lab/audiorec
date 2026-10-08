@@ -28,7 +28,7 @@ There is no test suite. Report what was verified and what was not.
 - Buttons with icons use `setIconButton(button, iconName, text, tooltip)`. Icons are `<symbol id="i-NAME">` in `index.html`.
 - Tooltips include the shortcut in parentheses only when there is one, e.g. `Record (*)`; no "(no shortcut)" suffix.
 - Timeline scale: `pxPerSecond`, computed in `renderTimeline()` from the `#zoom` slider (log scale from whole video to 1 s visible). Track headers (`#track-heads`) are a separate fixed column; the timeline scroll area starts at x = 0. Header and lane rows share the `--row` height in CSS.
-- Fades: `FADE_SECONDS = .005`, applied both in `syncPlayback` (gain ramps) and `exportWav` (sample gain). Keep both in sync.
+- Fades: `FADE_SECONDS = .005`, applied as gain ramps both in `syncPlayback` and in the offline `renderMix` used by export. Keep both in sync.
 
 ## Persistence — handle with care
 
