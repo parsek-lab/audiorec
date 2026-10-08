@@ -19,6 +19,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Collect site files
         run: mkdir -p dist/app && cp index.html dist/ && cp app/index.html app/style.css app/app.js dist/app/
+      # Browsers cache app.js and style.css for hours; a content hash in their URLs makes every release load the new files.
+      - name: Version asset URLs
+        run: |
+          for file in style.css app.js; do
+            hash=$(sha256sum "app/$file" | cut -c1-12)
+            sed -i "s|\"$file\"|\"$file?v=$hash\"|" dist/app/index.html
+            grep -q "\"$file?v=$hash\"" dist/app/index.html || { echo "$file reference not found in app/index.html"; exit 1; }
+          done
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
