@@ -221,7 +221,7 @@ function database() {
   });
 }
 function projectData() {
-  return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted,
+  return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: video.volume,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id}`, armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
       clips: t.clips.map(c => ({ name: c.name || 'Clip', start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(c.buffer.getChannelData(0)) })) })) };
@@ -268,7 +268,7 @@ async function restoreProject() {
         videoURL = URL.createObjectURL(selectedVideo); video.src = videoURL;
         showVideoName(selectedVideo.name);
       }
-      video.muted = !!data.videoMuted;
+      video.muted = !!data.videoMuted; video.volume = validVideoVolume(data.videoVolume) ? data.videoVolume : 1;
       status('Project restored from the browser.');
     } else tracks.push({ id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   } catch (error) {
@@ -969,7 +969,7 @@ function rememberProjectFile(handle) {
 function projectBlob() {
     const data = projectData();
     const manifest = {
-      version: 4, nextId: data.nextId, length: data.timelineLength, videoMuted: data.videoMuted,
+      version: 4, nextId: data.nextId, length: data.timelineLength, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
       video: data.videoFile ? { name: data.videoFile.name, type: data.videoFile.type, size: data.videoFile.size } : null,
       tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, volume: track.volume, color: track.color,
         clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd,
@@ -1050,7 +1050,7 @@ async function openProject(file, handle = null) {
     videoURL = importedVideo ? URL.createObjectURL(importedVideo) : null;
     video.removeAttribute('src'); if (videoURL) video.src = videoURL; else video.load();
     showVideoName(importedVideo?.name);
-    video.muted = !!manifest.videoMuted;
+    video.muted = !!manifest.videoMuted; video.volume = validVideoVolume(manifest.videoVolume) ? manifest.videoVolume : 1;
     tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; clearHistory();
     rememberProjectFile(handle); showProjectName(handle?.name || file.name);
     renderTracks(); await saveProject(); status(`Project opened: ${file.name}.`);
@@ -1068,7 +1068,7 @@ async function newProject() {
   video.removeAttribute('src'); video.load();
   $('video-file').value = '';
   showVideoName(null);
-  video.muted = false;
+  video.muted = false; video.volume = 1;
   nextId = 1; timelineLength = null; clearHistory();
   tracks.splice(0, tracks.length, { id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   renderTracks(); await saveProject(); status('New project started.');
@@ -1123,7 +1123,14 @@ function updateVideoMute() {
   const rowMute = $('video-audio-mute');
   setIconButton(rowMute, video.muted ? 'mute' : 'volume', 'Mute', `${video.muted ? 'Unmute' : 'Mute'} video audio`);
   rowMute.setAttribute('aria-pressed', String(video.muted));
+  const percent = Math.round(video.volume * 100), slider = $('video-audio-volume');
+  if (document.activeElement !== slider) slider.value = percent;
+  $('video-audio-volume-level').textContent = `${percent}%`;
+  slider.title = `Video volume ${percent}% (double-click: 100%)`; slider.setAttribute('aria-valuetext', `${percent}%`);
 }
+const validVideoVolume = value => Number.isFinite(value) && value >= 0 && value <= 1;
+$('video-audio-volume').oninput = event => { video.volume = event.target.value / 100; };
+$('video-audio-volume').ondblclick = () => { video.volume = 1; };
 $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
