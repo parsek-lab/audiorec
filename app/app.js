@@ -45,16 +45,27 @@ function startOvertime() {
   if (overPlaying) return;
   const audio = getContext(); audio.resume();
   overFrom = cursor ?? (video.currentTime || 0); overStart = audio.currentTime; overPlaying = true; cursor = null;
-  syncPlayback(); if (playheadFrame === null) animatePlayhead();
+  syncPlayback(); if (playheadFrame === null) animatePlayhead(); updatePlayButton();
 }
 function stopOvertime() {
   if (!overPlaying) return;
   cursor = openEnded() ? playPosition() : Math.min(playPosition(), timelineEnd()); overPlaying = false;
   if (recording) finishRecording();
-  stopPlayback(); stopPlayhead();
+  stopPlayback(); stopPlayhead(); updatePlayButton();
 }
 async function play() { if (cursor !== null || !videoLength()) startOvertime(); else await video.play(); }
 function pause() { if (overPlaying) stopOvertime(); else video.pause(); }
+async function togglePlay() {
+  if (!isPlaying()) {
+    try { await play(); } catch (error) { status(`Playback not started: ${error.message}`); }
+  } else pause();
+}
+function updatePlayButton() {
+  const playing = isPlaying(), button = $('play');
+  button.innerHTML = icon(playing ? 'pause' : 'play');
+  button.setAttribute('aria-pressed', String(playing));
+  button.setAttribute('aria-label', playing ? 'Pause' : 'Play'); button.title = `${playing ? 'Pause' : 'Play'} (Space)`;
+}
 function seekTo(seconds) {
   const duration = video.duration, time = Math.max(0, Math.min(timelineEnd(), seconds));
   if (time < duration) { cursor = null; video.currentTime = time; }
@@ -1147,6 +1158,8 @@ for (const tip of document.querySelectorAll('.tip, #project-menu, #tracks-menu')
 $('open-settings').onclick = () => $('device-dialog').showModal();
 $('input-meter').onclick = () => { context?.resume(); keepMicOn(); };
 $('monitor').onclick = toggleMonitor;
+$('play').onclick = togglePlay;
+for (const type of ['play', 'pause', 'ended']) video.addEventListener(type, updatePlayButton);
 updateMonitor();
 $('output-device').onchange = setOutput;
 $('input-device').onchange = () => { if (!recording) { stopMonitoring(); keepMicOn(); } };
@@ -1195,9 +1208,7 @@ document.addEventListener('keydown', async event => {
   }
   if (target === video) return;
   event.preventDefault();
-  if (!isPlaying()) {
-    try { await play(); } catch (error) { status(`Playback not started: ${error.message}`); }
-  } else pause();
+  togglePlay();
 });
 $('ruler').addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
