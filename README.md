@@ -14,6 +14,8 @@ python -m http.server 8000
 
 Then open the printed URL (e.g. `http://localhost:8000`) in a Chromium-based browser (Chrome, Edge) for full support.
 
+Live at https://audiorec.app (Cloudflare Pages). Every push to `main` redeploys `index.html`, `style.css` and `app.js` through `.github/workflows/deploy.yml`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+
 ## Features
 
 - **Video playback** with optional mute of the original audio (monitoring only, never exported).
