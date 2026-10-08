@@ -934,12 +934,12 @@ function updateMonitor() {
   $('monitor').setAttribute('aria-pressed', String(monitoring));
   $('monitor').title = monitoring ? 'Stop hearing the microphone' : 'Monitor: hear the microphone, use headphones to avoid feedback';
 }
-const micProcessing = () => ({ echoCancellation: !monitoring, noiseSuppression: !monitoring, autoGainControl: !monitoring });
+// The microphone stays open for the meter, so browser voice processing (echo cancellation, noise suppression, auto gain) is
+// always off: with it on, Chrome/Windows duck and gate the app's own playback, and recordings come out pumped and quieter.
+const micProcessing = () => ({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
 async function toggleMonitor() {
   monitoring = !monitoring;
   try { localStorage.setItem('audiorec-monitor', monitoring ? 'on' : 'off'); } catch {}
-  if (stream && recording) { for (const track of stream.getAudioTracks()) track.applyConstraints(micProcessing()).catch(() => {}); }
-  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); } }
   if (monitoring && !stream && !recording) {
     if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); }
     else try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
