@@ -489,7 +489,26 @@ function travel(from, to, verb) {
   renderTracks(); syncPlayback(); saveProject(); status(`${verb}: ${label}.`);
 }
 const undo = () => travel(undoStack, redoStack, 'Undo'), redo = () => travel(redoStack, undoStack, 'Redo');
-function updateSelection() { for (const [clip, element] of clipElements) element.classList.toggle('selected', selectedClips.has(clip)); }
+function updateSelection() {
+  for (const [clip, element] of clipElements) element.classList.toggle('selected', selectedClips.has(clip));
+  for (const item of $('clip-items').children) item.classList.toggle('selected', selectedClips.has(item.clip));
+}
+function renderClipList() {
+  const clips = tracks.flatMap(track => track.clips.map(clip => ({ clip, track }))).sort((a, b) => a.clip.start - b.clip.start || tracks.indexOf(a.track) - tracks.indexOf(b.track));
+  $('clip-count').textContent = clips.length; $('clip-empty').hidden = clips.length > 0;
+  $('clip-items').replaceChildren(...clips.map(({ clip, track }) => {
+    const item = document.createElement('li'); item.clip = clip;
+    item.className = `clip-item${track.muted ? ' muted-clip' : ''}${selectedClips.has(clip) ? ' selected' : ''}`;
+    item.style.setProperty('--track-color', trackColor(track));
+    item.title = `${clip.name || 'Clip'}: go to its start and select it (Shift+click to add to the selection)`;
+    const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || 'Clip';
+    const time = document.createElement('span'); time.className = 'clip-item-time'; time.textContent = formatTime(clip.start);
+    const meta = document.createElement('span'); meta.className = 'clip-item-meta'; meta.textContent = `${track.name} · ${clipDuration(clip).toFixed(1)} s`;
+    item.append(name, time, meta);
+    item.onclick = event => { selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
+    return item;
+  }));
+}
 function selectClip(clip, toggle) {
   if (!toggle) selectedClips.clear();
   if (toggle && selectedClips.has(clip)) selectedClips.delete(clip); else selectedClips.add(clip);
@@ -733,7 +752,7 @@ function renderTracks() {
     }
     row.append(lane); $('tracks').append(row);
   }
-  renderVideoAudio();
+  renderVideoAudio(); renderClipList();
 }
 let recordingPreview = null;
 const PREVIEW_SEGMENT = 1024;
