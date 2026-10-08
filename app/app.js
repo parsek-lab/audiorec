@@ -65,6 +65,7 @@ function updatePlayButton() {
   button.innerHTML = icon(playing ? 'pause' : 'play');
   button.setAttribute('aria-pressed', String(playing));
   button.setAttribute('aria-label', playing ? 'Pause' : 'Play'); button.title = `${playing ? 'Pause' : 'Play'} (Space)`;
+  startOutputMeters();
 }
 function seekTo(seconds) {
   const duration = video.duration, time = Math.max(0, Math.min(timelineEnd(), seconds));
@@ -221,7 +222,7 @@ function database() {
   });
 }
 function projectData() {
-  return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: video.volume,
+  return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id}`, armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
       clips: t.clips.map(c => ({ name: c.name || 'Clip', start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(c.buffer.getChannelData(0)) })) })) };
@@ -268,7 +269,7 @@ async function restoreProject() {
         videoURL = URL.createObjectURL(selectedVideo); video.src = videoURL;
         showVideoName(selectedVideo.name);
       }
-      video.muted = !!data.videoMuted; video.volume = validVideoVolume(data.videoVolume) ? data.videoVolume : 1;
+      video.muted = !!data.videoMuted; setVideoGain(validVolume(data.videoVolume) ? data.videoVolume : 1);
       status('Project restored from the browser.');
     } else tracks.push({ id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   } catch (error) {
@@ -664,11 +665,48 @@ function drawVideoWave() {
     videoWave.segments.set(index, canvas); lane.append(canvas);
   }
 }
+// Output meters read the samples under the playhead (clips per track, decoded peaks for the video), so no extra audio nodes are needed.
+const outputMeters = new Map(), meterLevels = new WeakMap();
+let outputMeterFrame = null;
+function showOutputLevel(element, peak) {
+  const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+  const level = Math.max(Math.max(0, Math.min(100, (db + 60) / 60 * 100)), (meterLevels.get(element) || 0) * .88);
+  meterLevels.set(element, level < .5 ? 0 : level);
+  element.style.height = `${level < .5 ? 0 : level}%`;
+  if (peak >= .99) element.parentElement.dataset.clipUntil = performance.now() + 1000;
+  element.parentElement.classList.toggle('clipping', performance.now() < (+element.parentElement.dataset.clipUntil || 0));
+}
+function trackPeak(track, time) {
+  if (track.muted) return 0;
+  let peak = 0;
+  for (const clip of track.clips) {
+    const offset = time - clip.start;
+    if (offset < 0 || offset >= clipDuration(clip)) continue;
+    const data = clip.buffer.getChannelData(0), rate = clip.buffer.sampleRate, from = Math.floor((offset + (clip.trimStart || 0)) * rate);
+    for (let i = from, end = Math.min(data.length, from + Math.round(rate * .05)); i < end; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
+  }
+  return peak * (track.volume ?? 1);
+}
+function videoPeak(time) {
+  const peaks = videoAudio?.peaks;
+  if (!peaks || video.muted || time >= videoLength()) return 0;
+  let peak = 0;
+  for (let i = Math.floor(time * PEAK_RATE), end = Math.min(peaks.length, i + PEAK_RATE / 20); i < end; i++) if (peaks[i] > peak) peak = peaks[i];
+  return peak * videoGain;
+}
+function updateOutputMeters() {
+  const playing = isPlaying() && !recording, time = playPosition();
+  const meters = [...outputMeters].map(([track, element]) => [element, playing ? trackPeak(track, time) : 0]);
+  meters.push([$('video-audio-meter'), playing && !$('video-audio-head').hidden ? videoPeak(time) : 0]);
+  for (const [element, peak] of meters) showOutputLevel(element, peak);
+  outputMeterFrame = playing || meters.some(([element]) => meterLevels.get(element) > 0) ? requestAnimationFrame(updateOutputMeters) : null;
+}
+const startOutputMeters = () => { outputMeterFrame ??= requestAnimationFrame(updateOutputMeters); };
 function renderTracks() {
   const armed = tracks.filter(t => t.armed);
   if (tracks.length && armed.length !== 1) armTrack(armed[0] ?? tracks[0]);
   renderTimeline();
-  $('tracks').replaceChildren(); $('track-heads').replaceChildren(); clipElements.clear();
+  $('tracks').replaceChildren(); $('track-heads').replaceChildren(); clipElements.clear(); outputMeters.clear();
   const present = new Set(tracks.flatMap(t => t.clips));
   for (const clip of selectedClips) if (!present.has(clip)) selectedClips.delete(clip);
   const laneWidth = Math.ceil(parseInt($('timeline').style.width, 10));
@@ -709,17 +747,20 @@ function renderTracks() {
     const separator = document.createElement('div'); separator.className = 'menu-separator'; separator.setAttribute('role', 'separator');
     menu.append(colorLabel, swatches, separator, remove);
     const top = document.createElement('div'); top.className = 'track-head-top'; top.append(title, more, menu);
-    const volume = document.createElement('input'); volume.type = 'range'; volume.className = 'track-volume'; volume.min = 0; volume.max = 200; volume.value = Math.round((track.volume ?? 1) * 100);
+    const volume = document.createElement('input'); volume.type = 'range'; volume.className = 'track-volume'; volume.min = 0; volume.max = 1000; volume.value = gainToSlider(track.volume ?? 1);
     volume.setAttribute('aria-label', `Volume of track ${track.id}`);
     const level = document.createElement('span'); level.className = 'track-volume-level';
-    const showVolume = () => { level.textContent = `${volume.value}%`; volume.title = `Volume ${volume.value}% (double-click: 100%)`; volume.setAttribute('aria-valuetext', `${volume.value}%`); };
+    const showVolume = () => { const db = formatDb(track.volume ?? 1); level.textContent = db; volume.title = `Volume ${db} dB (double-click: 0 dB)`; volume.setAttribute('aria-valuetext', `${db} dB`); };
     let adjusting = false;
-    volume.oninput = () => { if (!adjusting) { remember('change volume'); adjusting = true; } track.volume = volume.value / 100; showVolume(); applyVolume(track); };
+    volume.oninput = () => { if (!adjusting) { remember('change volume'); adjusting = true; } track.volume = sliderToGain(+volume.value); showVolume(); applyVolume(track); };
     volume.onchange = () => { adjusting = false; saveProject(); };
-    volume.ondblclick = () => { if (volume.value === '100') return; volume.value = 100; volume.oninput(); volume.onchange(); };
+    volume.ondblclick = () => { if ((track.volume ?? 1) === 1) return; volume.value = gainToSlider(1); volume.oninput(); volume.onchange(); };
     showVolume();
-    const bottom = document.createElement('div'); bottom.className = 'track-head-bottom'; bottom.append(rec, mute, volume, level);
-    const head = document.createElement('div'); head.className = 'track-head'; head.style.setProperty('--track-color', trackColor(track)); head.append(top, bottom); $('track-heads').append(head);
+    const bottom = document.createElement('div'); bottom.className = 'track-head-bottom'; bottom.append(rec, mute);
+    const meter = document.createElement('span'); meter.className = 'out-meter'; meter.title = 'Output level';
+    const meterFill = document.createElement('span'); meterFill.className = 'out-meter-fill'; meter.append(meterFill); outputMeters.set(track, meterFill);
+    const mix = document.createElement('div'); mix.className = 'track-mix'; mix.append(volume, meter, level);
+    const head = document.createElement('div'); head.className = 'track-head'; head.style.setProperty('--track-color', trackColor(track)); head.append(top, bottom, mix); $('track-heads').append(head);
     const lane = document.createElement('div'); lane.className = 'clip-lane'; lane.style.width = `${laneWidth}px`;
     lane.addEventListener('pointerdown', e => { if (e.target === lane && e.button === 0) selectArea(e, lane); });
     for (const clip of track.clips) {
@@ -787,7 +828,20 @@ function updateRecordingPreview() {
 }
 function getContext() { return context ??= new AudioContext(); }
 function stopPlayback() { for (const { node, gain, level } of playingSources) { try { node.stop(); } catch {} node.disconnect(); gain.disconnect(); level.disconnect(); } playingSources = []; }
-const validVolume = value => Number.isFinite(value) && value >= 0 && value <= 2;
+// Volume faders run from -inf to +10 dB on a quadratic curve (0 dB sits at about 62% of the travel); gains are stored linear.
+const MAX_DB = 10, MIN_DB = -60, MAX_GAIN = 10 ** (MAX_DB / 20);
+const validVolume = value => Number.isFinite(value) && value >= 0 && value <= MAX_GAIN + 1e-9;
+function sliderToGain(position) {
+  if (position <= 0) return 0;
+  const db = MAX_DB - (MAX_DB - MIN_DB) * (1 - position / 1000) ** 2;
+  return Math.abs(db) < .06 ? 1 : 10 ** (db / 20);
+}
+const gainToSlider = gain => gain <= 0 ? 0 : Math.round(1000 * (1 - Math.sqrt(Math.max(0, Math.min(1, (MAX_DB - 20 * Math.log10(gain)) / (MAX_DB - MIN_DB))))));
+function formatDb(gain) {
+  if (gain <= 0) return '-∞';
+  const db = 20 * Math.log10(gain);
+  return Math.abs(db) < .05 ? '0.0' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`;
+}
 const TRACK_COLORS = [['Violet', '#8b7bff'], ['Blue', '#4f8cff'], ['Cyan', '#3cc8e6'], ['Green', '#3ee0a1'], ['Yellow', '#ffc857'], ['Orange', '#ff9454'], ['Red', '#ff5f7e'], ['Pink', '#e879f9']];
 const validColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const trackColor = track => validColor(track.color) ? track.color : TRACK_COLORS[(track.id - 1) % TRACK_COLORS.length][1];
@@ -1050,7 +1104,7 @@ async function openProject(file, handle = null) {
     videoURL = importedVideo ? URL.createObjectURL(importedVideo) : null;
     video.removeAttribute('src'); if (videoURL) video.src = videoURL; else video.load();
     showVideoName(importedVideo?.name);
-    video.muted = !!manifest.videoMuted; video.volume = validVideoVolume(manifest.videoVolume) ? manifest.videoVolume : 1;
+    video.muted = !!manifest.videoMuted; setVideoGain(validVolume(manifest.videoVolume) ? manifest.videoVolume : 1);
     tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; clearHistory();
     rememberProjectFile(handle); showProjectName(handle?.name || file.name);
     renderTracks(); await saveProject(); status(`Project opened: ${file.name}.`);
@@ -1068,7 +1122,7 @@ async function newProject() {
   video.removeAttribute('src'); video.load();
   $('video-file').value = '';
   showVideoName(null);
-  video.muted = false; video.volume = 1;
+  video.muted = false; setVideoGain(1);
   nextId = 1; timelineLength = null; clearHistory();
   tracks.splice(0, tracks.length, { id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   renderTracks(); await saveProject(); status('New project started.');
@@ -1123,14 +1177,25 @@ function updateVideoMute() {
   const rowMute = $('video-audio-mute');
   setIconButton(rowMute, video.muted ? 'mute' : 'volume', 'Mute', `${video.muted ? 'Unmute' : 'Mute'} video audio`);
   rowMute.setAttribute('aria-pressed', String(video.muted));
-  const percent = Math.round(video.volume * 100), slider = $('video-audio-volume');
-  if (document.activeElement !== slider) slider.value = percent;
-  $('video-audio-volume-level').textContent = `${percent}%`;
-  slider.title = `Video volume ${percent}% (double-click: 100%)`; slider.setAttribute('aria-valuetext', `${percent}%`);
+  const db = formatDb(videoGain), slider = $('video-audio-volume');
+  if (document.activeElement !== slider) slider.value = gainToSlider(videoGain);
+  $('video-audio-volume-level').textContent = db;
+  slider.title = `Video volume ${db} dB (double-click: 0 dB)`; slider.setAttribute('aria-valuetext', `${db} dB`);
 }
-const validVideoVolume = value => Number.isFinite(value) && value >= 0 && value <= 1;
-$('video-audio-volume').oninput = event => { video.volume = event.target.value / 100; };
-$('video-audio-volume').ondblclick = () => { video.volume = 1; };
+// Up to 0 dB the element's own volume is enough; boosting routes the video through a GainNode (permanent for this page).
+let videoGain = 1, videoGainNode = null;
+function setVideoGain(gain) {
+  videoGain = gain;
+  if (gain > 1 && !videoGainNode) {
+    const audio = getContext(); videoGainNode = audio.createGain();
+    audio.createMediaElementSource(video).connect(videoGainNode).connect(audio.destination);
+  }
+  if (videoGainNode) { videoGainNode.gain.value = gain; video.volume = 1; } else video.volume = gain;
+  updateVideoMute();
+}
+$('video-audio-volume').oninput = event => setVideoGain(sliderToGain(+event.target.value));
+$('video-audio-volume').onchange = () => saveProject();
+$('video-audio-volume').ondblclick = () => { setVideoGain(1); saveProject(); };
 $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();

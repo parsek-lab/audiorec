@@ -22,7 +22,7 @@ There is no test suite. Report what was verified and what was not.
 - Single script, global scope, plain functions. `$ = id => document.getElementById(id)`.
 - Dense style: short one-liners, chained statements with `;` on one line, few comments. Match it.
 - State lives in module-level variables: `tracks`, `recording`, `context`, `stream`, `source`, `processor`, `nextId`, `selectedVideo`, `projectHandle`.
-- Track shape: `{ id, name, armed, muted, volume (0–2, default 1), color? (`#rrggbb`, default from `TRACK_COLORS` via `trackColor()`), clips, pending? }`. Clip shape: `{ name, start, trimStart, trimEnd, buffer: AudioBuffer }` (mono).
+- Track shape: `{ id, name, armed, muted, volume (linear gain 0–3.16, i.e. −∞ to +10 dB; default 1), color? (`#rrggbb`, default from `TRACK_COLORS` via `trackColor()`), clips, pending? }`. Clip shape: `{ name, start, trimStart, trimEnd, buffer: AudioBuffer }` (mono).
 - After changing tracks/clips, call in this order as needed: `renderTracks()` → `syncPlayback()` → `saveProject()`; then `status('…')` for user feedback.
 - `renderTracks()` rebuilds the whole track DOM; do not keep references to clip elements across renders.
 - Buttons with icons use `setIconButton(button, iconName, text, tooltip)`. Icons are `<symbol id="i-NAME">` in `index.html`.

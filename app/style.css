@@ -115,13 +115,17 @@ body.is-recording .video-panel{border-color:rgba(255,77,109,.55);box-shadow:0 0 
 .track-area{--row:72px;flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);margin-top:12px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.02)}
 .track-headers{overflow:hidden;background:var(--surface-solid);border-right:1px solid var(--line-strong);min-width:0}
 .ruler-spacer{position:sticky;top:0;z-index:2;background:var(--surface-solid);height:28px;border-bottom:1px solid var(--line-strong)}
-.track-head{box-shadow:inset 4px 0 0 var(--track-color,transparent);height:var(--row);display:grid;align-content:center;gap:6px;padding:0 8px 0 12px;border-bottom:1px solid var(--line);min-width:0}
+.track-head{--mix:44px;box-shadow:inset 4px 0 0 var(--track-color,transparent);height:var(--row);display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:center;column-gap:10px;row-gap:6px;padding:0 10px 0 12px;border-bottom:1px solid var(--line);min-width:0}
+.track-mix{grid-column:2;grid-row:1/3;display:grid;grid-template-columns:auto auto;align-items:end;justify-items:center;gap:2px 5px}
 .track-head-top,.track-head-bottom{display:flex;align-items:center;gap:6px;min-width:0}
 .track-head .track-name{flex:1;min-width:0;font-size:.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text}
 .track-head-bottom button{font-size:.72rem;font-weight:600;line-height:1.2;padding:5px 9px;border-radius:7px;background:rgba(255,255,255,.04);border-color:var(--line)}
 .track-head-bottom button .icon{width:12px;height:12px}
-.track-volume{flex:1;min-width:40px;accent-color:var(--accent);cursor:pointer}
-.track-volume-level{width:4ch;text-align:right;font:500 .68rem var(--mono);color:var(--subtle)}
+.track-volume{writing-mode:vertical-lr;direction:rtl;width:16px;height:var(--mix);margin:0;accent-color:var(--accent);cursor:pointer}
+.track-volume-level{grid-column:1/-1;font:500 .62rem var(--mono);color:var(--subtle);line-height:1}
+.out-meter{position:relative;width:6px;height:var(--mix);border-radius:3px;background:rgba(148,163,200,.14);overflow:hidden}
+.out-meter-fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(0deg,var(--ok) 0,var(--ok) 70%,var(--warn) 85%,var(--rec) 100%) bottom/100% var(--mix) no-repeat}
+.out-meter.clipping{box-shadow:0 0 0 1px var(--rec)}
 .track-head button[aria-pressed=true]{background:rgba(255,77,109,.18);border-color:rgba(255,77,109,.6);color:#ff8fa3}
 .track-head button[aria-pressed=true] .icon{fill:currentColor}
 .track-head button.muted[aria-pressed=true]{background:rgba(255,200,87,.14);border-color:rgba(255,200,87,.5);color:var(--warn)}
@@ -140,7 +144,7 @@ body.is-recording .video-panel{border-color:rgba(255,77,109,.55);box-shadow:0 0 
 .track-heads{padding-bottom:16px}
 .video-audio-head,.lane-row.video-audio-row{--video-row:60px;height:var(--video-row);position:sticky;top:28px;border-bottom:1px solid var(--line-strong)}
 .video-audio-head[hidden],.video-audio-row[hidden]{display:none}
-.video-audio-head{z-index:1;background:var(--surface-solid);box-shadow:inset 4px 0 0 var(--subtle)}
+.video-audio-head{--mix:32px;z-index:1;background:var(--surface-solid);box-shadow:inset 4px 0 0 var(--subtle)}
 .video-audio-head .icon{width:15px;height:15px;color:var(--subtle)}
 .video-audio-head .track-name{cursor:default;color:var(--subtle)}
 .video-audio-row{z-index:4;background:#0d1019}
