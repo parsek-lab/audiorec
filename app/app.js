@@ -207,6 +207,10 @@ function stopPlayhead() {
   playheadFrame = null;
   updatePlayhead();
 }
+// Read each clip's samples through one cached array: browsers with fingerprinting protection (Brave Shields) alter the
+// buffer on every getChannelData call, so repeated calls from the meters made playback fade within seconds.
+const channels = new WeakMap();
+const channel = buffer => { let data = channels.get(buffer); if (!data) channels.set(buffer, data = buffer.getChannelData(0)); return data; };
 const clipDuration = clip => Math.max(0, clip.buffer.duration - (clip.trimStart || 0) - (clip.trimEnd || 0));
 const FADE_SECONDS = .005;
 function fadeGain(position, duration, fade) {
@@ -225,7 +229,7 @@ function projectData() {
   return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id}`, armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
       clips: t.clips.map(c => ({ name: c.name || 'Clip', start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0,
-        sampleRate: c.buffer.sampleRate, samples: new Float32Array(c.buffer.getChannelData(0)) })) })) };
+        sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
 }
 function saveProject() {
   if (restoring) return saveQueue;
@@ -550,7 +554,7 @@ async function importAudio(files, track = tracks.find(t => t.armed) ?? tracks[0]
   for (const file of files) {
     try {
       const decoded = await audio.decodeAudioData(await file.arrayBuffer());
-      const buffer = audio.createBuffer(1, decoded.length, decoded.sampleRate), mono = buffer.getChannelData(0);
+      const buffer = audio.createBuffer(1, decoded.length, decoded.sampleRate), mono = channel(buffer);
       for (let c = 0; c < decoded.numberOfChannels; c++) { const data = decoded.getChannelData(c); for (let i = 0; i < data.length; i++) mono[i] += data[i] / decoded.numberOfChannels; }
       clips.push({ name: file.name.replace(/\.[^.]+$/, '') || 'Clip', start: Math.max(0, start), trimStart: 0, trimEnd: 0, buffer }); start += decoded.duration;
     } catch { failed.push(file.name); }
@@ -595,7 +599,7 @@ function drawWaveform(clip) {
   const canvas = document.createElement('canvas'), ratio = window.devicePixelRatio || 1;
   canvas.className = 'clip-wave'; canvas.width = Math.min(16000, Math.ceil(width * ratio)); canvas.height = Math.ceil(height * ratio);
   canvas.style.width = `${width}px`; canvas.style.left = `${-(clip.trimStart || 0) * pxPerSecond}px`;
-  const g = canvas.getContext('2d'), data = clip.buffer.getChannelData(0), step = data.length / canvas.width, middle = canvas.height / 2;
+  const g = canvas.getContext('2d'), data = channel(clip.buffer), step = data.length / canvas.width, middle = canvas.height / 2;
   g.fillStyle = 'rgba(230,235,255,.75)';
   for (let x = 0; x < canvas.width; x++) {
     let peak = 0;
@@ -682,7 +686,7 @@ function trackPeak(track, time) {
   for (const clip of track.clips) {
     const offset = time - clip.start;
     if (offset < 0 || offset >= clipDuration(clip)) continue;
-    const data = clip.buffer.getChannelData(0), rate = clip.buffer.sampleRate, from = Math.floor((offset + (clip.trimStart || 0)) * rate);
+    const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.floor((offset + (clip.trimStart || 0)) * rate);
     for (let i = from, end = Math.min(data.length, from + Math.round(rate * .05)); i < end; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
   }
   return peak * (track.volume ?? 1);
@@ -701,7 +705,7 @@ function masterPeak(time) {
     const at = time + k * .05 / 400;
     let sum = 0;
     for (const { clip, gain } of clips) {
-      const data = clip.buffer.getChannelData(0), i = Math.floor((at - clip.start + (clip.trimStart || 0)) * clip.buffer.sampleRate);
+      const data = channel(clip.buffer), i = Math.floor((at - clip.start + (clip.trimStart || 0)) * clip.buffer.sampleRate);
       if (i < data.length) sum += data[i] * gain;
     }
     if (Math.abs(sum) > peak) peak = Math.abs(sum);
@@ -1001,7 +1005,7 @@ function finishRecording() {
     const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     if (length) {
       const buffer = context.createBuffer(1, length, sampleRate);
-      const data = buffer.getChannelData(0); let position = 0;
+      const data = channel(buffer); let position = 0;
       for (const chunk of chunks) { data.set(chunk, position); position += chunk.length; }
       track.clips.push({ name: nextClipName(track), start, buffer });
     }
@@ -1167,7 +1171,7 @@ function exportWav() {
   if (length * 2 + 44 > 0xffffffff) { status('Recording too long for a single WAV.'); return; }
   const mix = new Float32Array(length);
   for (const track of tracks) for (const clip of track.muted ? [] : track.clips) {
-    const data = clip.buffer.getChannelData(0), start = Math.round(clip.start * rate), volume = track.volume ?? 1;
+    const data = channel(clip.buffer), start = Math.round(clip.start * rate), volume = track.volume ?? 1;
     const trim = Math.round((clip.trimStart || 0) * rate), count = Math.round(clipDuration(clip) * rate);
     const fadeSamples = Math.min(Math.round(FADE_SECONDS * rate), (count - 1) / 2);
     for (let i = 0; i < count && trim + i < data.length && start + i < length; i++) {
