@@ -574,6 +574,66 @@ function drawWaveform(clip) {
   }
   return canvas;
 }
+// Read-only row with the video's own audio: peaks decoded once per file, drawn in segments around the visible area.
+let videoAudio = null, videoWave = { scale: 0, segments: new Map() };
+const PEAK_RATE = 200, VIDEO_SEGMENT = 2048, VIDEO_AUDIO_NOTES = { loading: 'Reading the video audio…', none: 'No readable audio in this video', large: 'Video too large to draw its audio' };
+async function readVideoAudio(file) {
+  if (videoAudio?.file === file && file) return;
+  const entry = videoAudio = file ? { file, state: 'loading' } : null;
+  videoWave.scale = 0; renderVideoAudio();
+  if (!entry) return;
+  try {
+    if (file.size > 1.5e9) entry.state = 'large';
+    else {
+      const decoded = await new OfflineAudioContext(1, 1, 8000).decodeAudioData(await file.arrayBuffer());
+      const peaks = new Float32Array(Math.ceil(decoded.duration * PEAK_RATE)), per = decoded.sampleRate / PEAK_RATE;
+      for (let c = 0; c < decoded.numberOfChannels; c++) {
+        const data = decoded.getChannelData(c);
+        for (let i = 0; i < peaks.length; i++) {
+          let peak = peaks[i];
+          for (let j = Math.floor(i * per), end = Math.min(data.length, Math.floor((i + 1) * per)); j < end; j++) { const v = Math.abs(data[j]); if (v > peak) peak = v; }
+          peaks[i] = peak;
+        }
+      }
+      Object.assign(entry, { state: peaks.some(p => p > 0) ? 'ready' : 'none', peaks });
+    }
+  } catch { entry.state = 'none'; }
+  if (videoAudio === entry) { videoWave.scale = 0; renderVideoAudio(); }
+}
+function renderVideoAudio() {
+  $('video-audio-head').hidden = $('video-audio-row').hidden = !videoAudio;
+  if (!videoAudio) return;
+  $('video-audio-lane').style.width = $('timeline').style.width;
+  $('video-audio-note').textContent = VIDEO_AUDIO_NOTES[videoAudio.state] || '';
+  drawVideoWave();
+}
+function drawVideoWave() {
+  const lane = $('video-audio-lane');
+  if (videoWave.scale !== pxPerSecond || videoAudio?.state !== 'ready') { for (const canvas of videoWave.segments.values()) canvas.remove(); videoWave = { scale: pxPerSecond, segments: new Map() }; }
+  if (videoAudio?.state !== 'ready') return;
+  const { peaks } = videoAudio, scroller = $('timeline-scroll'), total = peaks.length / PEAK_RATE * pxPerSecond;
+  const first = Math.max(0, Math.floor((scroller.scrollLeft - scroller.clientWidth) / VIDEO_SEGMENT));
+  const last = Math.min(Math.ceil(total / VIDEO_SEGMENT) - 1, Math.floor((scroller.scrollLeft + 2 * scroller.clientWidth) / VIDEO_SEGMENT));
+  for (const [index, canvas] of videoWave.segments) if (index < first - 2 || index > last + 2) { canvas.remove(); videoWave.segments.delete(index); }
+  const ratio = window.devicePixelRatio || 1, height = lane.clientHeight || 60;
+  for (let index = first; index <= last; index++) {
+    if (videoWave.segments.has(index)) continue;
+    const left = index * VIDEO_SEGMENT, width = Math.min(VIDEO_SEGMENT, total - left);
+    const canvas = document.createElement('canvas'); canvas.className = 'clip-wave video-wave';
+    canvas.width = Math.ceil(width * ratio); canvas.height = Math.ceil(height * ratio);
+    canvas.style.left = `${left}px`; canvas.style.width = `${width}px`;
+    const g = canvas.getContext('2d'), middle = canvas.height / 2, perPixel = PEAK_RATE / pxPerSecond / ratio;
+    g.fillStyle = 'rgba(160,172,200,.6)';
+    for (let x = 0; x < canvas.width; x++) {
+      const from = (left * ratio + x) * perPixel, to = Math.max(Math.floor(from) + 1, Math.floor(from + perPixel));
+      let peak = 0;
+      for (let i = Math.floor(from); i < to && i < peaks.length; i++) if (peaks[i] > peak) peak = peaks[i];
+      const bar = Math.max(ratio / 2, Math.min(1, peak * 1.4) * middle * .85);
+      g.fillRect(x, middle - bar, 1, bar * 2);
+    }
+    videoWave.segments.set(index, canvas); lane.append(canvas);
+  }
+}
 function renderTracks() {
   const armed = tracks.filter(t => t.armed);
   if (tracks.length && armed.length !== 1) armTrack(armed[0] ?? tracks[0]);
@@ -662,6 +722,7 @@ function renderTracks() {
     }
     row.append(lane); $('tracks').append(row);
   }
+  renderVideoAudio();
 }
 let recordingPreview = null;
 const PREVIEW_SEGMENT = 1024;
@@ -1020,14 +1081,18 @@ function showVideoName(name) {
   $('video-name').textContent = name || 'Choose video';
   $('video-picker').classList.toggle('primary', !name); $('video-mute').hidden = !name;
   $('video-picker').title = name ? `${name}: click to choose another video` : 'Choose video';
+  readVideoAudio(name ? selectedVideo : null);
 }
 showVideoName(null);
 function updateVideoMute() {
   const button = $('video-mute');
   setIconButton(button, video.muted ? 'mute' : 'volume', `Video audio ${video.muted ? 'off' : 'on'}`, `${video.muted ? 'Unmute' : 'Mute'} video audio`);
   button.setAttribute('aria-pressed', String(video.muted));
+  const rowMute = $('video-audio-mute');
+  setIconButton(rowMute, video.muted ? 'mute' : 'volume', 'Mute', `${video.muted ? 'Unmute' : 'Mute'} video audio`);
+  rowMute.setAttribute('aria-pressed', String(video.muted));
 }
-$('video-mute').onclick = () => { video.muted = !video.muted; };
+$('video-mute').onclick = $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
 for (const id of ['project-menu', 'tracks-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
@@ -1226,7 +1291,7 @@ video.addEventListener('loadedmetadata', () => { rescale(); detectFps(); });
 let ticksFrame = null;
 $('track-headers').addEventListener('wheel', event => { if (event.ctrlKey || event.metaKey) return; event.preventDefault(); $('timeline-scroll').scrollTop += event.deltaY; }, { passive: false });
 $('timeline-scroll').addEventListener('scroll', () => {
-  $('track-headers').scrollTop = $('timeline-scroll').scrollTop; ticksFrame ??= requestAnimationFrame(() => { ticksFrame = null; renderTicks(); }); });
+  $('track-headers').scrollTop = $('timeline-scroll').scrollTop; ticksFrame ??= requestAnimationFrame(() => { ticksFrame = null; renderTicks(); drawVideoWave(); }); });
 video.addEventListener('play', async () => { overPlaying = false; cursor = null; if (context) await context.resume(); syncPlayback(); if (playheadFrame === null) animatePlayhead(); });
 video.addEventListener('pause', () => { if (video.ended && timelineEnd() > video.duration + .01) return; if (recording) finishRecording(); stopPlayback(); stopPlayhead(); });
 video.addEventListener('seeking', () => { if (cursor !== null && video.currentTime < video.duration - .01) cursor = null; if (recording) finishRecording(); stopPlayback(); });

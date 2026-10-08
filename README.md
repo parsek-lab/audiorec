@@ -18,7 +18,7 @@ Live at https://audiorec.app (Cloudflare Pages). The landing page is at `/`, the
 
 ## Features
 
-- **Video playback** with optional mute of the original audio (monitoring only, never exported).
+- **Video playback** with optional mute of the original audio (monitoring only, never exported). The video's own audio is drawn as a read-only waveform row above the tracks.
 - **Multi-track recording**: arm one or more tracks with **REC**, press **Record**, speak while the video plays. Every armed track gets the same take.
 - **Timeline editing**: drag clips to move them, drag their edges to trim, double-click to rename clips and tracks. Import audio files (button, or drag them from your computer onto a track); stereo files are mixed down to mono. Click a clip to select it (Shift+click for more) and press Del to remove the selection. Ctrl+Z undoes and Ctrl+Shift+Z / Ctrl+Y redoes every track and clip change (history resets on New/Open project). The ruler and time display read minutes:seconds:frames, with the frame rate read from the video file (MP4/MOV/WebM; otherwise measured during playback, 25 fps until then). Dragging the playhead to a timeline edge scrolls, accelerating the longer you hold. Zoom with the slider (fully left: whole video; fully right: 1 second visible), `+` / `-`, or Ctrl + mouse wheel.
 - **Scrubbing**: click or drag the ruler to seek; the playhead stays centered while playing.

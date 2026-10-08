@@ -125,6 +125,15 @@ body.is-recording .video-panel{border-color:rgba(255,77,109,.55);box-shadow:0 0 
 .menu-item{justify-content:flex-start;width:100%;padding:8px 10px;border-radius:8px;background:transparent;border-color:transparent;font-size:.85rem}
 .menu-item.danger-item{color:#ff8fa3}.menu-item.danger-item:hover{background:rgba(255,77,109,.16);border-color:transparent}
 .track-heads{padding-bottom:16px}
+.video-audio-head,.lane-row.video-audio-row{--video-row:60px;height:var(--video-row);position:sticky;top:28px;border-bottom:1px solid var(--line-strong)}
+.video-audio-head[hidden],.video-audio-row[hidden]{display:none}
+.video-audio-head{z-index:1;background:var(--surface-solid);box-shadow:inset 4px 0 0 var(--subtle)}
+.video-audio-head .icon{width:15px;height:15px;color:var(--subtle)}
+.video-audio-head .track-name{cursor:default;color:var(--subtle)}
+.read-only{font-size:.7rem;font-weight:500;color:var(--muted);letter-spacing:.02em}
+.video-audio-row{z-index:4;background:#0d1019}
+.video-audio-lane{position:relative;height:100%;display:flex;align-items:center;overflow:hidden}
+.video-audio-note{position:sticky;left:12px;z-index:1;font-size:.75rem;color:var(--muted)}
 .timeline-scroll{overflow:auto;min-width:0;isolation:isolate;scrollbar-color:#3a4460 transparent;scrollbar-width:thin}
 .timeline{min-width:100%;width:max-content;position:relative}
 .playhead{position:absolute;top:0;bottom:0;left:0;width:2px;background:var(--warn);pointer-events:none;z-index:7;box-shadow:0 0 12px rgba(255,200,87,.6)}
