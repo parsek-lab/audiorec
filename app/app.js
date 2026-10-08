@@ -900,6 +900,11 @@ async function startMonitoring() {
     await listDevices();
   } catch (error) { mic.getTracks().forEach(t => t.stop()); throw error; }
 }
+function nextClipName(track) {
+  const prefix = `${track.name} `;
+  const used = tracks.flatMap(t => t.clips).map(({ name = '' }) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)) ? Number(name.slice(prefix.length)) : 0);
+  return `${track.name} ${Math.max(0, ...used) + 1}`;
+}
 function finishRecording() {
   if (!recording) return;
   recording = false;
@@ -914,7 +919,7 @@ function finishRecording() {
       const buffer = context.createBuffer(1, length, sampleRate);
       const data = buffer.getChannelData(0); let position = 0;
       for (const chunk of chunks) { data.set(chunk, position); position += chunk.length; }
-      track.clips.push({ name: `Clip ${track.clips.length + 1}`, start, buffer });
+      track.clips.push({ name: nextClipName(track), start, buffer });
     }
     delete track.pending;
   }
