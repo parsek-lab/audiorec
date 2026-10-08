@@ -1079,20 +1079,17 @@ $('video-file').onchange = event => {
 };
 function showVideoName(name) {
   $('video-name').textContent = name || 'Choose video';
-  $('video-picker').classList.toggle('primary', !name); $('video-mute').hidden = !name;
+  $('video-picker').classList.toggle('primary', !name);
   $('video-picker').title = name ? `${name}: click to choose another video` : 'Choose video';
   readVideoAudio(name ? selectedVideo : null);
 }
 showVideoName(null);
 function updateVideoMute() {
-  const button = $('video-mute');
-  setIconButton(button, video.muted ? 'mute' : 'volume', `Video audio ${video.muted ? 'off' : 'on'}`, `${video.muted ? 'Unmute' : 'Mute'} video audio`);
-  button.setAttribute('aria-pressed', String(video.muted));
   const rowMute = $('video-audio-mute');
   setIconButton(rowMute, video.muted ? 'mute' : 'volume', 'Mute', `${video.muted ? 'Unmute' : 'Mute'} video audio`);
   rowMute.setAttribute('aria-pressed', String(video.muted));
 }
-$('video-mute').onclick = $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
+$('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
 for (const id of ['project-menu', 'tracks-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
