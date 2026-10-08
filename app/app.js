@@ -505,12 +505,13 @@ function renderClipList() {
     const item = document.createElement('li'); item.clip = clip;
     item.className = `clip-item${track.muted ? ' muted-clip' : ''}${selectedClips.has(clip) ? ' selected' : ''}`;
     item.style.setProperty('--track-color', trackColor(track));
-    item.title = `${clip.name || 'Clip'}: go to its start and select it (Shift+click to add to the selection)`;
+    item.title = `${clip.name || 'Clip'}: go to its start and select it (Shift+click to add to the selection) · Rename (double-click)`;
     const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || 'Clip';
     const time = document.createElement('span'); time.className = 'clip-item-time'; time.textContent = formatTime(clip.start);
     const meta = document.createElement('span'); meta.className = 'clip-item-meta'; meta.textContent = `${track.name} · ${clipDuration(clip).toFixed(1)} s`;
     item.append(name, time, meta);
-    item.onclick = event => { selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
+    item.onclick = event => { if (name.isContentEditable) return; selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
+    item.ondblclick = () => editName(name, clip.name || 'Clip', value => { remember('rename clip'); clip.name = value; renderTracks(); saveProject(); status(`Clip renamed: ${value}.`); });
     return item;
   }));
 }
