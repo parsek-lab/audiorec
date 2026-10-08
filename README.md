@@ -24,7 +24,7 @@ Live at https://audiorec.app (Cloudflare Pages). The landing page is at `/`, the
 - **Clip list** next to the video: every clip in timeline order, with track, start time and length. Click one to jump to its start and select it (Shift+click adds to the selection).
 - **Scrubbing**: click or drag the ruler to seek; the playhead stays centered while playing.
 - **Clean edits**: 5 ms fade-in/out on every clip, in playback and export.
-- **Mic test & level meter** in the settings dialog, plus input/output device selection (output selection depends on browser support for `setSinkId`).
+- **Mic test & level meter** in the settings dialog, with an **Enhanced audio** toggle (browser echo cancellation, noise suppression and auto gain; off by default), plus input/output device selection (output selection depends on browser support for `setSinkId`).
 - **Autosave** of video and recordings in IndexedDB — survives a page refresh.
 - **Project files** (`.audiorec`): save/open the full project (video + recordings). With the File System Access API, later saves overwrite the same file; otherwise the file is downloaded.
 - **Export WAV**: mono 16-bit mix of all unmuted tracks, at the AudioContext sample rate, saved as `<project name>-audio.wav`.

@@ -938,14 +938,31 @@ function updateMonitor() {
   $('monitor').setAttribute('aria-pressed', String(monitoring));
   $('monitor').title = monitoring ? 'Stop hearing the microphone' : 'Monitor: hear the microphone, use headphones to avoid feedback';
 }
-// Record the raw microphone: with echo cancellation, noise suppression and auto gain on, Chrome attenuates the voice a moment
-// after each phrase starts (worse while the video plays through speakers), so recorded clips fade out.
-const micProcessing = () => ({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+// Enhanced audio = the browser's echo cancellation, noise suppression and auto gain. Off by default (raw microphone);
+// always off while monitoring, where it made the monitored voice duck and drop out.
+let enhancedAudio = false;
+try { enhancedAudio = localStorage.getItem('audiorec-enhanced') === 'on'; } catch {}
+const micProcessing = () => { const on = enhancedAudio && !monitoring; return { echoCancellation: on, noiseSuppression: on, autoGainControl: on }; };
+async function applyMicProcessing() {
+  if (stream && recording) { for (const track of stream.getAudioTracks()) track.applyConstraints(micProcessing()).catch(() => {}); }
+  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); } }
+}
+function updateEnhancedButton() {
+  const button = $('enhanced-audio');
+  button.setAttribute('aria-pressed', String(enhancedAudio));
+  button.title = enhancedAudio ? 'Turn off enhanced audio: record the raw microphone' : 'Turn on enhanced audio: echo cancellation, noise suppression and automatic gain';
+  $('enhanced-state').textContent = !enhancedAudio ? 'Off: raw microphone' : monitoring ? 'On, paused while Monitor is on' : 'On';
+}
+async function toggleEnhancedAudio() {
+  enhancedAudio = !enhancedAudio;
+  try { localStorage.setItem('audiorec-enhanced', enhancedAudio ? 'on' : 'off'); } catch {}
+  updateEnhancedButton(); await applyMicProcessing();
+  status(enhancedAudio ? 'Enhanced audio on.' : 'Enhanced audio off: recording the raw microphone.');
+}
 async function toggleMonitor() {
   monitoring = !monitoring;
   try { localStorage.setItem('audiorec-monitor', monitoring ? 'on' : 'off'); } catch {}
-  if (stream && recording) { for (const track of stream.getAudioTracks()) track.applyConstraints(micProcessing()).catch(() => {}); }
-  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); } }
+  updateEnhancedButton(); await applyMicProcessing();
   if (monitoring && !stream && !recording) {
     if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); }
     else try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
@@ -1284,6 +1301,8 @@ for (const tip of document.querySelectorAll('.tip, #project-menu, #tracks-menu')
 $('open-settings').onclick = () => $('device-dialog').showModal();
 $('input-meter').onclick = () => { if (!recording) $('test-mic').click(); };
 $('monitor').onclick = toggleMonitor;
+$('enhanced-audio').onclick = toggleEnhancedAudio;
+updateEnhancedButton();
 $('play').onclick = togglePlay;
 for (const type of ['play', 'pause', 'ended']) video.addEventListener(type, updatePlayButton);
 updateMonitor();
