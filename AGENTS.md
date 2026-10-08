@@ -22,19 +22,19 @@ There is no test suite. Report what was verified and what was not.
 - Single script, global scope, plain functions. `$ = id => document.getElementById(id)`.
 - Dense style: short one-liners, chained statements with `;` on one line, few comments. Match it.
 - State lives in module-level variables: `tracks`, `recording`, `context`, `stream`, `source`, `processor`, `nextId`, `selectedVideo`, `projectHandle`.
-- Track shape: `{ id, name, armed, muted, clips, pending? }`. Clip shape: `{ name, start, trimStart, trimEnd, buffer: AudioBuffer }` (mono).
+- Track shape: `{ id, name, armed, muted, volume (0–2, default 1), color? (`#rrggbb`, default from `TRACK_COLORS` via `trackColor()`), clips, pending? }`. Clip shape: `{ name, start, trimStart, trimEnd, buffer: AudioBuffer }` (mono).
 - After changing tracks/clips, call in this order as needed: `renderTracks()` → `syncPlayback()` → `saveProject()`; then `status('…')` for user feedback.
 - `renderTracks()` rebuilds the whole track DOM; do not keep references to clip elements across renders.
 - Buttons with icons use `setIconButton(button, iconName, text, tooltip)`. Icons are `<symbol id="i-NAME">` in `index.html`.
-- Tooltips always include the shortcut in parentheses, e.g. `Record (*)`, `Add track (no shortcut)`.
-- Timeline scale: `PX_PER_SECOND = 80`; the left controls column is 260 px wide (hardcoded in `updatePlayhead` and `renderTracks`).
+- Tooltips include the shortcut in parentheses only when there is one, e.g. `Record (*)`; no "(no shortcut)" suffix.
+- Timeline scale: `pxPerSecond`, computed in `renderTimeline()` from the `#zoom` slider (log scale from whole video to 1 s visible). Track headers (`#track-heads`) are a separate fixed column; the timeline scroll area starts at x = 0. Header and lane rows share the `--row` height in CSS.
 - Fades: `FADE_SECONDS = .005`, applied both in `syncPlayback` (gain ramps) and `exportWav` (sample gain). Keep both in sync.
 
 ## Persistence — handle with care
 
 - **IndexedDB** database `audio-sopra-video`, store `project`, keys `current` (project snapshot) and `fileHandle`. Do not rename: existing users would lose their autosave.
 - `saveProject()` is a serialized queue and is a no-op while `restoring` is true.
-- **`.audiorec` file format** (see README) is versioned (`version: 1`). Any change to the layout or manifest must bump the version and keep reading v1 files. `openProject` validates every field; extend validation when adding fields.
+- **`.audiorec` file format** (see README) is versioned (currently `version: 4`; v2 added track `volume`, v3 track `color`, v4 project `length`). Any change to the layout or manifest must bump the version and keep reading older versions. `openProject` validates every field; extend validation when adding fields.
 - Persisted fields must be added to all three: `projectData()`, `restoreProject()`, `projectBlob()`/`openProject()`.
 
 ## UI conventions (`index.html`, `style.css`)
@@ -45,4 +45,4 @@ There is no test suite. Report what was verified and what was not.
 
 ## Recording pipeline
 
-`getUserMedia` → `MediaStreamSource` → `AnalyserNode` (level meter) and, while recording, → `ScriptProcessor(4096)` → zero-gain node → destination. Chunks are copied into `track.pending.chunks` for every armed track and assembled into an `AudioBuffer` in `finishRecording()`. Pause, seek or end of video stops recording.
+`getUserMedia` → `MediaStreamSource` → `AnalyserNode` (level meter) and, while recording, → `ScriptProcessor(4096)` → zero-gain node → destination. Chunks are copied into `track.pending.chunks` for every armed track and assembled into an `AudioBuffer` in `finishRecording()`. Pause, seek or end of the timeline stops recording. Past the video's end, playback and recording continue on an AudioContext clock (`startOvertime`/`stopOvertime`, `cursor`), up to `timelineEnd()`; use `playPosition()`, `isPlaying()`, `play()`, `pause()` and `seekTo()` instead of reading or driving `video` directly.
