@@ -1458,4 +1458,63 @@ navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
 for (const id of ['video-file', 'add-track', 'import-audio', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
 // An AudioContext created before any click starts suspended (e.g. when restoring a boosted video volume).
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
+// Custom tooltips: every title attribute (static or set later by code) moves to data-tooltip, so the native tooltip never
+// shows, and is displayed in a styled top-layer popover on hover or keyboard focus.
+const tooltip = document.createElement('div'); tooltip.className = 'tooltip'; tooltip.popover = 'manual'; tooltip.setAttribute('role', 'tooltip');
+document.body.append(tooltip);
+let tooltipTarget = null, tooltipTimer = null, tooltipHiddenAt = 0;
+function fillTooltip(text) {
+  const [, main, key] = /^(.*?)\s*\(([^()]+)\)$/s.exec(text) || [, text];
+  tooltip.replaceChildren(main);
+  if (key) { const hint = document.createElement('span'); hint.className = 'tooltip-key'; hint.textContent = key; tooltip.append(hint); }
+}
+function adoptTitle(element) {
+  const text = element.getAttribute('title'); element.removeAttribute('title');
+  if (!text) { delete element.dataset.tooltip; return; }
+  element.dataset.tooltip = text;
+  if ('tooltipLabel' in element.dataset || (!element.hasAttribute('aria-label') && !element.textContent.trim())) { element.setAttribute('aria-label', text); element.dataset.tooltipLabel = ''; }
+  if (element === tooltipTarget && tooltip.matches(':popover-open')) fillTooltip(text);
+}
+function adoptTitles(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  if (node.hasAttribute('title')) adoptTitle(node);
+  node.querySelectorAll('[title]').forEach(adoptTitle);
+}
+adoptTitles(document.body);
+new MutationObserver(records => {
+  for (const record of records) {
+    if (record.type === 'attributes') { if (record.target.hasAttribute('title')) adoptTitle(record.target); }
+    else record.addedNodes.forEach(adoptTitles);
+  }
+}).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+function showTooltip(target) {
+  tooltipTimer = null;
+  if (!target.isConnected || !target.dataset.tooltip) return;
+  fillTooltip(target.dataset.tooltip);
+  if (tooltip.matches(':popover-open')) tooltip.hidePopover();
+  tooltip.showPopover();
+  const box = target.getBoundingClientRect(), width = tooltip.offsetWidth, height = tooltip.offsetHeight;
+  const below = box.bottom + 8, above = box.top - height - 8;
+  tooltip.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, box.left + box.width / 2 - width / 2))}px`;
+  tooltip.style.top = `${below + height > window.innerHeight - 8 && above > 8 ? above : below}px`;
+}
+function hideTooltip() {
+  clearTimeout(tooltipTimer); tooltipTimer = null; tooltipTarget = null;
+  if (tooltip.matches(':popover-open')) { tooltip.hidePopover(); tooltipHiddenAt = performance.now(); }
+}
+function queueTooltip(target, delay) {
+  hideTooltip();
+  if (!target) return;
+  tooltipTarget = target;
+  tooltipTimer = setTimeout(() => showTooltip(target), performance.now() - tooltipHiddenAt < 400 ? 0 : delay);
+}
+document.addEventListener('pointerover', event => {
+  const target = event.target instanceof Element ? event.target.closest('[data-tooltip]') : null;
+  if (target !== tooltipTarget) queueTooltip(event.pointerType === 'touch' ? null : target, 450);
+});
+document.addEventListener('pointerout', event => { if (!event.relatedTarget) hideTooltip(); });
+document.addEventListener('focusin', event => { const target = event.target.closest?.('[data-tooltip]'); if (target?.matches(':focus-visible')) queueTooltip(target, 0); });
+document.addEventListener('focusout', hideTooltip);
+for (const type of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(type, hideTooltip, true);
+document.addEventListener('scroll', hideTooltip, true);
 restoreProject(); listDevices();

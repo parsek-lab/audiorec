@@ -220,6 +220,11 @@ dialog::backdrop{background:rgba(4,6,12,.7);backdrop-filter:blur(6px)}
 .field input{font:500 .95rem var(--font);color:var(--text);background:#0d1019;border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:10px 12px}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 
+/* Custom tooltips (see the tooltip block at the end of app.js) */
+.tooltip{position:fixed;inset:auto;margin:0;max-width:min(300px,calc(100vw - 16px));padding:6px 10px;display:none;align-items:center;gap:8px;background:linear-gradient(180deg,#1b2031,#141826);color:var(--text);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);font:500 .78rem/1.4 var(--font);pointer-events:none}
+.tooltip:popover-open{display:flex;animation:tooltip-in .12s ease-out}
+.tooltip-key{flex:none;font:500 .7rem var(--mono);color:var(--accent-2);padding:1px 6px;border-radius:5px;background:var(--raised);border:1px solid var(--line-strong)}
+@keyframes tooltip-in{from{opacity:0;transform:translateY(-2px)}}
 /* Contextual info */
 .info-button{width:30px;height:30px;padding:0;border-radius:50%;background:transparent;border-color:transparent;color:var(--muted)}
 .info-button:hover,.info-button.open{background:var(--raised);border-color:var(--line);color:var(--accent)}
