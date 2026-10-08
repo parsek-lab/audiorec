@@ -226,7 +226,7 @@ function database() {
   });
 }
 function projectData() {
-  return { nextId, projectName, timelineLength, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
+  return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id}`, armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
       clips: t.clips.map(c => ({ name: c.name || 'Clip', start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
@@ -267,6 +267,7 @@ async function restoreProject() {
         tracks.push({ id: saved.id, name: saved.name || `Track ${saved.id}`, armed: saved.armed, muted: saved.muted, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
       }
       nextId = data.nextId; timelineLength = validLength(data.timelineLength ?? null) ? data.timelineLength ?? null : null;
+      restoreMarkers(data);
       showProjectName(typeof data.projectName === 'string' ? data.projectName : projectHandle?.name);
       selectedVideo = data.videoFile || null;
       if (selectedVideo) {
@@ -331,12 +332,79 @@ function renderTimeline() {
   updateLengthField();
   updatePlayhead(false);
   $('ruler').dataset.seconds = seconds;
+  renderMarkers();
   const frame = pxPerSecond / fps, nominal = Math.round(fps);
   const frameStep = FRAME_STEPS.find(n => n < nominal && nominal % n === 0 && n * frame >= 120);
   const step = frameStep ? frameStep / fps : TICK_STEPS.find(s => s * pxPerSecond >= 120) ?? TICK_STEPS.at(-1);
   $('timeline').style.setProperty('--grid', `${frame >= 12 ? frame : step * pxPerSecond / 2}px`);
   renderTicks();
 }
+// Export markers: In and Out handles on the ruler delimit the export range. exportOut null = follows the timeline length.
+let exportIn = 0, exportOut = null;
+const markBand = document.createElement('div'), markIn = document.createElement('div'), markOut = document.createElement('div');
+markBand.className = 'mark-band'; markIn.className = 'mark-handle mark-in'; markOut.className = 'mark-handle mark-out';
+markIn.title = 'Export start: drag to move, double-click to reset (I)'; markOut.title = 'Export end: drag to move, double-click to reset (O)';
+const defaultOut = () => projectLength() || clipsEnd();
+const exportOutTime = () => exportOut ?? defaultOut();
+const validMark = value => Number.isFinite(value) && value >= 0 && value <= 86400;
+function restoreMarkers(data) {
+  exportIn = validMark(data.exportIn) ? data.exportIn : 0;
+  exportOut = validMark(data.exportOut) && data.exportOut > exportIn ? data.exportOut : null;
+}
+function renderMarkers() {
+  const start = exportIn, end = exportOutTime(), shown = end > start;
+  markIn.style.left = $('mark-in-line').style.left = markBand.style.left = `${start * pxPerSecond}px`;
+  markOut.style.left = $('mark-out-line').style.left = `${end * pxPerSecond}px`;
+  markBand.style.width = `${Math.max(0, end - start) * pxPerSecond}px`;
+  markOut.hidden = $('mark-out-line').hidden = markBand.hidden = !shown;
+  markIn.dataset.time = formatTime(start); markOut.dataset.time = formatTime(end);
+}
+function placeMarkers(start, end, label) {
+  const out = Math.abs(end - defaultOut()) < 1e-6 ? null : end;
+  if (start === exportIn && out === exportOut) return;
+  remember(label); exportIn = start; exportOut = out;
+  renderMarkers(); saveProject();
+}
+function markAtPlayhead(which) {
+  const time = Math.round(playPosition() * fps) / fps;
+  if (which === 'in') {
+    const end = time < exportOutTime() ? exportOutTime() : defaultOut();
+    if (time >= end) { status('The export start must come before the end.'); return; }
+    placeMarkers(time, end, 'set export start');
+  } else {
+    const start = time > exportIn ? exportIn : 0;
+    if (time <= start) { status('The export end must come after the start.'); return; }
+    placeMarkers(start, time, 'set export end');
+  }
+  status(`Export ${which === 'in' ? 'start' : 'end'}: ${formatTime(time)}.`);
+}
+function dragMarker(event, which) {
+  if (event.button !== 0) return;
+  event.preventDefault(); event.stopPropagation();
+  const handle = which === 'in' ? markIn : markOut, pointer = event.pointerId, before = snapshot(), frame = 1 / fps;
+  const edges = tracks.flatMap(t => t.clips.flatMap(c => [c.start, c.start + clipDuration(c)]));
+  handle.setPointerCapture(pointer); handle.classList.add('dragging');
+  const move = e => {
+    if (e.pointerId !== pointer) return;
+    const raw = (e.clientX - $('ruler').getBoundingClientRect().left) / pxPerSecond;
+    const snap = [0, playPosition(), defaultOut(), ...edges].find(t => Math.abs(t - raw) * pxPerSecond < 8);
+    const time = Math.min(Math.max(timelineEnd(), clipsEnd()), Math.max(0, snap ?? Math.round(raw * fps) / fps));
+    if (which === 'in') exportIn = Math.min(time, exportOutTime() - frame);
+    else { const end = Math.max(time, exportIn + frame); exportOut = Math.abs(end - defaultOut()) < 1e-6 ? null : end; }
+    renderMarkers();
+  };
+  const done = e => {
+    if (e.pointerId !== pointer) return;
+    handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', done); handle.removeEventListener('pointercancel', done);
+    handle.classList.remove('dragging');
+    if (before.markers[0] !== exportIn || before.markers[1] !== exportOut) { remember(`move export ${which === 'in' ? 'start' : 'end'}`, before); saveProject(); }
+  };
+  handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', done); handle.addEventListener('pointercancel', done);
+}
+markIn.addEventListener('pointerdown', event => dragMarker(event, 'in'));
+markOut.addEventListener('pointerdown', event => dragMarker(event, 'out'));
+markIn.addEventListener('dblclick', () => placeMarkers(0, exportOutTime(), 'reset export start'));
+markOut.addEventListener('dblclick', () => placeMarkers(exportIn, Math.max(defaultOut(), exportIn + 1 / fps), 'reset export end'));
 function renderTicks() {
   const ruler = $('ruler'), scroller = $('timeline-scroll'), seconds = +ruler.dataset.seconds || 0;
   const frame = pxPerSecond / fps, nominal = Math.round(fps);
@@ -349,9 +417,9 @@ function renderTicks() {
     const step = TICK_STEPS.find(s => s * pxPerSecond >= 120) ?? TICK_STEPS.at(-1);
     for (let s = Math.ceil(from / step) * step; s <= to; s += step) ticks.push([s, clock(s)]);
   }
-  ruler.replaceChildren(...ticks.map(([s, label]) => {
+  ruler.replaceChildren(markBand, ...ticks.map(([s, label]) => {
     const tick = document.createElement('span'); tick.className = 'tick'; tick.style.left = `${s * pxPerSecond}px`; tick.textContent = label; return tick;
-  }));
+  }), markIn, markOut);
 }
 const rescale = () => { renderTracks(); updatePlayhead('instant'); };
 const zoomBy = steps => { $('zoom').value = +$('zoom').value + steps * 50; rescale(); };
@@ -474,7 +542,7 @@ function editName(element, value, commit) {
   element.addEventListener('pointerdown', e => e.stopPropagation(), { signal: off.signal });
 }
 const undoStack = [], redoStack = [], selectedClips = new Set(), clipElements = new Map();
-const snapshot = () => ({ nextId, length: timelineLength, tracks: tracks.map(({ pending, ...t }) => ({ ...t, clips: t.clips.map(c => ({ ...c })) })) });
+const snapshot = () => ({ nextId, length: timelineLength, markers: [exportIn, exportOut], tracks: tracks.map(({ pending, ...t }) => ({ ...t, clips: t.clips.map(c => ({ ...c })) })) });
 function updateHistoryButtons() {
   $('undo').disabled = !undoStack.length; $('undo').title = undoStack.length ? `Undo ${undoStack.at(-1).label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
   $('redo').disabled = !redoStack.length; $('redo').title = redoStack.length ? `Redo ${redoStack.at(-1).label} (Ctrl+Shift+Z)` : 'Redo (Ctrl+Shift+Z)';
@@ -490,6 +558,7 @@ function travel(from, to, verb) {
   const { label, state } = from.pop();
   to.push({ label, state: snapshot() });
   tracks.splice(0, tracks.length, ...state.tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c })) }))); nextId = state.nextId; timelineLength = state.length ?? null;
+  [exportIn, exportOut] = state.markers ?? [0, null];
   selectedClips.clear(); updateHistoryButtons();
   renderTracks(); syncPlayback(); saveProject(); status(`${verb}: ${label}.`);
 }
@@ -1076,7 +1145,7 @@ function rememberProjectFile(handle) {
 function projectBlob() {
     const data = projectData();
     const manifest = {
-      version: 4, nextId: data.nextId, length: data.timelineLength, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
+      version: 4, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
       video: data.videoFile ? { name: data.videoFile.name, type: data.videoFile.type, size: data.videoFile.size } : null,
       tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, volume: track.volume, color: track.color,
         clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd,
@@ -1158,7 +1227,7 @@ async function openProject(file, handle = null) {
     video.removeAttribute('src'); if (videoURL) video.src = videoURL; else video.load();
     showVideoName(importedVideo?.name);
     video.muted = !!manifest.videoMuted; setVideoGain(validVolume(manifest.videoVolume) ? manifest.videoVolume : 1);
-    tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; clearHistory();
+    tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; restoreMarkers(manifest); clearHistory();
     rememberProjectFile(handle); showProjectName(handle?.name || file.name);
     renderTracks(); await saveProject(); status(`Project opened: ${file.name}.`);
   } catch (error) { status(`Could not open project: ${error.message}`); }
@@ -1176,7 +1245,7 @@ async function newProject() {
   $('video-file').value = '';
   showVideoName(null);
   video.muted = false; setVideoGain(1);
-  nextId = 1; timelineLength = null; clearHistory();
+  nextId = 1; timelineLength = null; exportIn = 0; exportOut = null; clearHistory();
   tracks.splice(0, tracks.length, { id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
   renderTracks(); await saveProject(); status('New project started.');
 }
@@ -1218,7 +1287,7 @@ function openExport() {
   $('export-video-hint').textContent = !hasVideo ? 'Choose a video first' : !canExportVideo ? 'Not supported in this browser' : 'MP4: original picture, new soundtrack';
   if (videoRadio.disabled && videoRadio.checked) document.querySelector('input[name="export-kind"][value="audio"]').checked = true;
   $('export-progress').hidden = true;
-  setExportRange(0, defaultExportEnd(exportKind()));
+  setMarkerRange();
   $('export-dialog').showModal();
 }
 for (const radio of document.querySelectorAll('input[name="export-kind"]')) radio.onchange = () => {
@@ -1229,6 +1298,8 @@ $('export-video-audio').onchange = event => { exportVideoAudio[exportKind()] = e
 for (const id of ['export-start', 'export-end']) $(id).addEventListener('input', updateExportDialog);
 $('export-start-playhead').onclick = () => { $('export-start').value = formatTime(playPosition()); updateExportDialog(); };
 $('export-end-playhead').onclick = () => { $('export-end').value = formatTime(playPosition()); updateExportDialog(); };
+function setMarkerRange() { const end = exportOutTime(); setExportRange(exportIn, exportKind() === 'video' ? Math.min(end, videoDuration()) : end); }
+$('export-markers').onclick = setMarkerRange;
 $('export-whole').onclick = () => setExportRange(0, defaultExportEnd(exportKind()));
 $('export-selection').onclick = () => {
   const clips = [...selectedClips];
@@ -1328,6 +1399,7 @@ async function runExport() {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     status(`Exported ${name} (${formatTime(range.start)} – ${formatTime(range.end)}).`);
     exporting = null; $('export-dialog').close();
+    placeMarkers(range.start, range.end, 'set export range');
   } catch (error) {
     if (!job.canceled) status(`Export failed: ${error.message}`);
   } finally {
@@ -1463,6 +1535,9 @@ document.addEventListener('keydown', async event => {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('.video-frame').requestFullscreen(); }
     catch (error) { status(`Could not toggle full screen: ${error.message}`); }
     return;
+  }
+  if ((key === 'i' || key === 'o') && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
+    event.preventDefault(); markAtPlayhead(key === 'i' ? 'in' : 'out'); return;
   }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
   const zoom = { '+': 1, '=': 1, '-': -1, '_': -1 }[event.key];

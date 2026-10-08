@@ -27,7 +27,8 @@ Live at https://audiorec.app (Cloudflare Pages). The landing page is at `/`, the
 - **Mic test & level meter** in the settings dialog, with an **Enhanced audio** toggle (browser echo cancellation, noise suppression and auto gain; off by default), plus input/output device selection (output selection depends on browser support for `setSinkId`).
 - **Autosave** of video and recordings in IndexedDB — survives a page refresh.
 - **Project files** (`.audiorec`): save/open the full project (video + recordings). With the File System Access API, later saves overwrite the same file; otherwise the file is downloaded.
-- **Export** (Menu → Export…) over a chosen start/end range, by default the whole timeline length:
+- **Export markers**: two draggable handles on the ruler (start and end) delimit the export; <kbd>I</kbd> / <kbd>O</kbd> place them at the playhead, double-click resets one. They snap to frames, the playhead, clip edges and the timeline length, and are saved with the project and in undo.
+- **Export** (Menu → Export…) over a chosen start/end range, by default the export markers:
   - **Audio only**: 16-bit WAV mix of all unmuted tracks at the AudioContext sample rate (mono, stereo when the video audio is included), saved as `<project name>-audio.wav`.
   - **Video + audio**: MP4 with the original video packets copied (no re-encoding) and the mix encoded as AAC (Opus where AAC is unavailable), saved as `<project name>.mp4`. Needs WebCodecs; the range must end within the video.
   - Optionally mixes in the video's own audio at the Video audio volume.
@@ -61,7 +62,7 @@ Binary, little-endian:
 
 1. 8 bytes: ASCII `AUDIOREC`
 2. 4 bytes: `uint32` length of the JSON manifest
-3. JSON manifest (`version: 4`, `nextId`, `length` (timeline length and default export end, in seconds, or `null` = video length), `videoMuted`, `videoVolume` (linear gain, optional), `video` metadata, `tracks` with `volume` (linear gain, 0 to 3.16 = +10 dB), `color` (`#rrggbb`) and clip `start`, `trimStart`, `trimEnd`, `sampleRate`, `sampleCount`). Older files still open: version 1 (no `volume`) at 100% volume, versions 1–2 (no `color`) with default track colors, versions 1–3 (no `length`) following the video length.
+3. JSON manifest (`version: 4`, `nextId`, `length` (timeline length in seconds, or `null` = video length), `exportIn` / `exportOut` (export markers in seconds, optional; `exportOut` `null` = timeline length), `videoMuted`, `videoVolume` (linear gain, optional), `video` metadata, `tracks` with `volume` (linear gain, 0 to 3.16 = +10 dB), `color` (`#rrggbb`) and clip `start`, `trimStart`, `trimEnd`, `sampleRate`, `sampleCount`). Older files still open: version 1 (no `volume`) at 100% volume, versions 1–2 (no `color`) with default track colors, versions 1–3 (no `length`) following the video length.
 4. Raw video bytes (if a video is set)
 5. Each clip's samples as `float32`, in track/clip order
 
