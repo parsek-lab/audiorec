@@ -4,7 +4,7 @@ Record voice-over on top of any video, directly in the browser. No build step, n
 
 ## Run it
 
-The microphone only works on `localhost` or HTTPS, so serve the folder instead of opening `index.html` from disk:
+The microphone only works on `localhost` or HTTPS, so serve the folder instead of opening the files from disk:
 
 ```sh
 npx serve .
@@ -12,9 +12,9 @@ npx serve .
 python -m http.server 8000
 ```
 
-Then open the printed URL (e.g. `http://localhost:8000`) in a Chromium-based browser (Chrome, Edge) for full support.
+Then open the app at `/app/` on the printed URL (e.g. `http://localhost:8000/app/`) in a Chromium-based browser (Chrome, Edge) for full support.
 
-Live at https://audiorec.app (Cloudflare Pages). Every push to `main` redeploys `index.html`, `style.css` and `app.js` through `.github/workflows/deploy.yml`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+Live at https://audiorec.app (Cloudflare Pages). The landing page is at `/`, the app at `/app/`. Every push to `main` redeploys the landing page and the app through `.github/workflows/deploy.yml`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
 
 ## Features
 
@@ -46,9 +46,10 @@ Recording stops automatically when the video is paused, seeked or ends. Recorded
 
 | File | Contents |
 | --- | --- |
-| `index.html` | Markup, inline SVG icon library, info popovers, device dialog |
-| `style.css` | Dark theme, design tokens on `:root` |
-| `app.js` | All logic: recording, timeline, playback, persistence, export |
+| `index.html` | Landing page (self-contained: inline CSS, SVG and script) |
+| `app/index.html` | Markup, inline SVG icon library, info popovers, device dialog |
+| `app/style.css` | Dark theme, design tokens on `:root` |
+| `app/app.js` | All logic: recording, timeline, playback, persistence, export |
 
 ## `.audiorec` format
 

@@ -4,15 +4,15 @@ Guidance for coding agents working on Audiorec. User-facing docs are in `README.
 
 ## Project shape
 
-- Static web app: `index.html`, `style.css`, `app.js`. No build, no bundler, no npm dependencies, no framework.
+- Static web app in `app/`: `index.html`, `style.css`, `app.js` (served at `/app/`). The root `index.html` is the self-contained landing page. No build, no bundler, no npm dependencies, no framework.
 - Keep it that way: do not add a package manager, transpiler or library unless the user asks.
 - Not a git repository. There is no `git diff` to review changes against.
 - UI text, code and comments are in **English**, even though the user usually writes requests in Italian.
 
 ## Running and verifying
 
-1. Syntax check: `node --check app.js`
-2. Serve locally (mic needs localhost/HTTPS): `npx serve .` or `python -m http.server 8000`
+1. Syntax check: `node --check app/app.js`
+2. Serve locally (mic needs localhost/HTTPS): `npx serve .` or `python -m http.server 8000`, then open `/app/`
 3. Check the change in a Chromium browser. Real microphone tests cannot be automated; say so explicitly when reporting.
 
 There is no test suite. Report what was verified and what was not.

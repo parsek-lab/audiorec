@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Collect site files
-        run: mkdir dist && cp index.html style.css app.js dist/
+        run: mkdir -p dist/app && cp index.html dist/ && cp app/index.html app/style.css app/app.js dist/app/
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
