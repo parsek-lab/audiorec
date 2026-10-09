@@ -425,6 +425,7 @@ function renderTicks() {
 }
 const rescale = () => { renderTracks(); updatePlayhead('instant'); };
 const zoomBy = steps => { $('zoom').value = +$('zoom').value + steps * 50; rescale(); };
+const DRAG_DELAY = 200, DRAG_DISTANCE = 4;
 function editClip(event, clip, mode, element) {
   event.preventDefault(); event.stopPropagation();
   const pointer = event.pointerId, x = event.clientX, before = snapshot(), wasSelected = selectedClips.has(clip);
@@ -436,7 +437,10 @@ function editClip(event, clip, mode, element) {
   const items = (mode === 'move' ? [...selectedClips] : [clip]).map(c => ({ clip: c, element: clipElements.get(c), start: c.start, index: trackIndex(c) }));
   const earliest = Math.min(...items.map(i => i.start)), lowest = Math.min(...items.map(i => i.index)), highest = Math.max(...items.map(i => i.index));
   const rowTop = index => rows[index].getBoundingClientRect().top;
+  // A press only selects: the clip stays put until the button has been held for DRAG_DELAY and the pointer has moved a
+  // few pixels, so a slightly shaky click does not nudge it.
   let offset = 0, moved = false;
+  const pressed = performance.now(), y = event.clientY;
   const copying = mode === 'move' && event.altKey, ghosts = [];
   element.setPointerCapture(pointer);
   for (const item of items) {
@@ -455,6 +459,7 @@ function editClip(event, clip, mode, element) {
   };
   const move = e => {
     if (e.pointerId !== pointer) return;
+    if (!moved && (performance.now() - pressed < DRAG_DELAY || Math.hypot(e.clientX - x, e.clientY - y) < DRAG_DISTANCE)) return;
     moved = true;
     const delta = (e.clientX - x) / pxPerSecond;
     if (mode === 'move') {
@@ -1223,13 +1228,11 @@ async function saveProjectFile() {
   try {
     const blob = projectBlob();
     const suggested = `${(projectName || 'project').replace(/\.audiorec$/i, '')}.audiorec`;
+    // Without the File System Access API, download straight away: the browser's own Save As window (when enabled) names
+    // the file. An in-app name prompt confirmed with Enter left the Windows pointer hidden over that window.
     if (!window.showSaveFilePicker) {
-      const name = await askName('Save project', suggested.replace(/\.audiorec$/i, ''), 'Download');
-      if (name === null) return;
-      const fileName = `${name.replace(/[\/:*?"<>|]/g, '-')}.audiorec`;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const fileName = suggested.replace(/[\/:*?"<>|]/g, '-');
+      downloadBlob(blob, fileName);
       showProjectName(fileName); saveProject();
       status(`Project downloaded as ${fileName} (this browser cannot overwrite files).`);
       return;
