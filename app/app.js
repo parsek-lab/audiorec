@@ -1,3 +1,4 @@
+I18N.translatePage();
 const $ = id => document.getElementById(id);
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 function setIconButton(button, name, text, tooltip) {
@@ -8,15 +9,15 @@ function setIconButton(button, name, text, tooltip) {
 }
 function updateRecordButton() {
   updateClipActions();
-  setIconButton($('record'), recording ? 'stop' : 'record', recording ? 'Stop recording' : 'Record', `${recording ? 'Stop recording' : 'Record'} (*)`);
+  setIconButton($('record'), recording ? 'stop' : 'record', recording ? tr('Stop recording') : tr('Record'), recording ? tr('Stop recording (*)') : tr('Record (*)'));
   $('record').classList.toggle('active', recording);
   document.body.classList.toggle('is-recording', recording);
 }
 function updateMicButton() {
-  setIconButton($('test-mic'), stream ? 'stop' : 'record', stream ? 'Stop test' : 'Test microphone', `${stream ? 'Stop microphone test' : 'Test microphone'}`);
+  setIconButton($('test-mic'), stream ? 'stop' : 'record', stream ? tr('Stop test') : tr('Test microphone'), stream ? tr('Stop microphone test') : tr('Test microphone'));
   $('test-mic').setAttribute('aria-pressed', String(!!stream));
   $('input-meter').setAttribute('aria-pressed', String(!!stream));
-  $('input-meter').title = stream ? `Input level${recording ? '' : ': click to stop listening'}` : 'Input level: click to listen to the microphone';
+  $('input-meter').title = stream ? (recording ? tr('Input level') : tr('Input level: click to stop listening')) : tr('Input level: click to listen to the microphone');
 }
 let meterLevel = 0, clipUntil = 0;
 function showInputLevel(peak) {
@@ -59,14 +60,14 @@ async function play() { if (cursor !== null || !videoLength()) startOvertime(); 
 function pause() { if (overPlaying) stopOvertime(); else video.pause(); }
 async function togglePlay() {
   if (!isPlaying()) {
-    try { await play(); } catch (error) { status(`Playback not started: ${error.message}`); }
+    try { await play(); } catch (error) { status(tr('Playback not started: {message}', { message: error.message })); }
   } else pause();
 }
 function updatePlayButton() {
   const playing = isPlaying(), button = $('play');
   button.innerHTML = icon(playing ? 'pause' : 'play');
   button.setAttribute('aria-pressed', String(playing));
-  button.setAttribute('aria-label', playing ? 'Pause' : 'Play'); button.title = `${playing ? 'Pause' : 'Play'} (Space)`;
+  button.setAttribute('aria-label', playing ? tr('Pause') : tr('Play')); button.title = playing ? tr('Pause (Space)') : tr('Play (Space)');
   startOutputMeters();
 }
 function seekTo(seconds) {
@@ -231,8 +232,8 @@ function database() {
 }
 function projectData() {
   return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
-    tracks: tracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id}`, armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
-      clips: t.clips.map(c => ({ name: c.name || 'Clip', start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted,
+    tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
+      clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
 }
 function saveProject() {
@@ -245,7 +246,7 @@ function saveProject() {
       tx.objectStore('project').put(snapshot, 'current');
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
     });
-  }).catch(error => { status(`Local save failed: ${error.message}`); });
+  }).catch(error => { status(tr('Local save failed: {message}', { message: error.message })); });
   return saveQueue;
 }
 async function restoreProject() {
@@ -266,9 +267,9 @@ async function restoreProject() {
         const clips = saved.clips.map(c => {
           const buffer = audio.createBuffer(1, c.samples.length, c.sampleRate);
           buffer.copyToChannel(c.samples, 0);
-          return { name: c.name || 'Clip', start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, buffer };
+          return { name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, buffer };
         });
-        tracks.push({ id: saved.id, name: saved.name || `Track ${saved.id}`, armed: saved.armed, muted: saved.muted, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
+        tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
       }
       nextId = data.nextId; timelineLength = validLength(data.timelineLength ?? null) ? data.timelineLength ?? null : null;
       restoreMarkers(data);
@@ -279,12 +280,12 @@ async function restoreProject() {
         showVideoName(selectedVideo.name);
       }
       video.muted = !!data.videoMuted; setVideoGain(validVolume(data.videoVolume) ? data.videoVolume : 1);
-      status('Project restored from the browser.');
-    } else tracks.push({ id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
+      status(tr('Project restored from the browser.'));
+    } else tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
   } catch (error) {
     tracks.length = 0;
-    tracks.push({ id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
-    status(`Local storage unavailable: ${error.message}`);
+    tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
+    status(tr('Local storage unavailable: {message}', { message: error.message }));
   } finally {
     restoring = false; clearHistory(); renderTracks();
     for (const id of ['video-file', 'add-track', 'import-audio', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
@@ -311,14 +312,14 @@ function updateLengthField() {
   const input = $('timeline-length');
   if (document.activeElement === input) return;
   input.value = timelineLength === null ? '' : formatTime(timelineLength);
-  input.placeholder = Number.isFinite(video.duration) ? formatTime(video.duration) : 'Auto';
+  input.placeholder = Number.isFinite(video.duration) ? formatTime(video.duration) : tr('Auto');
 }
 function setTimelineLength(text) {
   const value = text.trim() ? parseLength(text) : null;
-  if (!validLength(value)) { status('Invalid length: use mm:ss:ff, mm:ss or seconds.'); updateLengthField(); return; }
+  if (!validLength(value)) { status(tr('Invalid length: use mm:ss:ff, mm:ss or seconds.')); updateLengthField(); return; }
   if (value === timelineLength) { updateLengthField(); return; }
-  remember('change length'); timelineLength = value;
-  renderTracks(); saveProject(); status(value === null ? 'Timeline length follows the video.' : `Timeline length: ${formatTime(value)}.`);
+  remember(tr('change length')); timelineLength = value;
+  renderTracks(); saveProject(); status(value === null ? tr('Timeline length follows the video.') : tr('Timeline length: {time}.', { time: formatTime(value) }));
 }
 function renderTimeline() {
   const duration = projectLength();
@@ -347,7 +348,7 @@ function renderTimeline() {
 let exportIn = 0, exportOut = null;
 const markBand = document.createElement('div'), markIn = document.createElement('div'), markOut = document.createElement('div');
 markBand.className = 'mark-band'; markIn.className = 'mark-handle mark-in'; markOut.className = 'mark-handle mark-out';
-markIn.title = 'Export start: drag to move, double-click to reset (I)'; markOut.title = 'Export end: drag to move, double-click to reset (O)';
+markIn.title = tr('Export start: drag to move, double-click to reset (I)'); markOut.title = tr('Export end: drag to move, double-click to reset (O)');
 const defaultOut = () => projectLength() || clipsEnd();
 const exportOutTime = () => exportOut ?? defaultOut();
 const validMark = value => Number.isFinite(value) && value >= 0 && value <= 86400;
@@ -373,14 +374,14 @@ function markAtPlayhead(which) {
   const time = Math.round(playPosition() * fps) / fps;
   if (which === 'in') {
     const end = time < exportOutTime() ? exportOutTime() : defaultOut();
-    if (time >= end) { status('The export start must come before the end.'); return; }
-    placeMarkers(time, end, 'set export start');
+    if (time >= end) { status(tr('The export start must come before the end.')); return; }
+    placeMarkers(time, end, tr('set export start'));
   } else {
     const start = time > exportIn ? exportIn : 0;
-    if (time <= start) { status('The export end must come after the start.'); return; }
-    placeMarkers(start, time, 'set export end');
+    if (time <= start) { status(tr('The export end must come after the start.')); return; }
+    placeMarkers(start, time, tr('set export end'));
   }
-  status(`Export ${which === 'in' ? 'start' : 'end'}: ${formatTime(time)}.`);
+  status(which === 'in' ? tr('Export start: {time}.', { time: formatTime(time) }) : tr('Export end: {time}.', { time: formatTime(time) }));
 }
 function dragMarker(event, which) {
   if (event.button !== 0) return;
@@ -401,14 +402,14 @@ function dragMarker(event, which) {
     if (e.pointerId !== pointer) return;
     handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', done); handle.removeEventListener('pointercancel', done);
     handle.classList.remove('dragging');
-    if (before.markers[0] !== exportIn || before.markers[1] !== exportOut) { remember(`move export ${which === 'in' ? 'start' : 'end'}`, before); saveProject(); }
+    if (before.markers[0] !== exportIn || before.markers[1] !== exportOut) { remember(which === 'in' ? tr('move export start') : tr('move export end'), before); saveProject(); }
   };
   handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', done); handle.addEventListener('pointercancel', done);
 }
 markIn.addEventListener('pointerdown', event => dragMarker(event, 'in'));
 markOut.addEventListener('pointerdown', event => dragMarker(event, 'out'));
-markIn.addEventListener('dblclick', () => placeMarkers(0, exportOutTime(), 'reset export start'));
-markOut.addEventListener('dblclick', () => placeMarkers(exportIn, Math.max(defaultOut(), exportIn + 1 / fps), 'reset export end'));
+markIn.addEventListener('dblclick', () => placeMarkers(0, exportOutTime(), tr('reset export start')));
+markOut.addEventListener('dblclick', () => placeMarkers(exportIn, Math.max(defaultOut(), exportIn + 1 / fps), tr('reset export end')));
 function renderTicks() {
   const ruler = $('ruler'), scroller = $('timeline-scroll'), seconds = +ruler.dataset.seconds || 0;
   const frame = pxPerSecond / fps, nominal = Math.round(fps);
@@ -489,35 +490,36 @@ function editClip(event, clip, mode, element) {
     element.removeEventListener('pointermove', move); element.removeEventListener('pointerup', done); element.removeEventListener('pointercancel', done);
     for (const item of items) if (item.element) { item.element.classList.remove('dragging', 'copying'); item.element.style.transform = ''; }
     rows.forEach(row => row.classList.remove('drop-target')); ghosts.forEach(ghost => ghost.remove());
-    const count = items.length, what = count === 1 ? 'clip' : `${count} clips`;
+    const count = items.length, named = count === 1 ? clip.name || tr('Clip') : trn('{count} clip', '{count} clips', count);
     if (copying) {
       const copies = items.map(item => ({ ...item.clip, start: item.clip.start, index: item.index + offset, source: item }));
       for (const item of items) item.clip.start = item.start;
       if (e.type === 'pointerup' && (offset || copies.some(c => c.start !== c.source.start))) {
-        remember(`duplicate ${what}`, before);
+        remember(trn('duplicate clip', 'duplicate {count} clips', count), before);
         selectedClips.clear();
         for (const { index, source, ...copy } of copies) { tracks[index].clips.push(copy); selectedClips.add(copy); }
-        renderTracks(); syncPlayback(); saveProject(); status(`${count === 1 ? clip.name || 'Clip' : `${count} clips`} duplicated.`);
+        renderTracks(); syncPlayback(); saveProject(); status(tr('{clips} duplicated.', { clips: named }));
       } else renderTracks();
     } else if (offset && e.type === 'pointerup') {
-      const label = items.every(i => i.index === items[0].index) ? tracks[items[0].index + offset].name : `${Math.abs(offset)} track${Math.abs(offset) === 1 ? '' : 's'} ${offset > 0 ? 'down' : 'up'}`;
-      remember(`move ${what} to ${label}`, before);
+      const label = items.every(i => i.index === items[0].index) ? tracks[items[0].index + offset].name : offset > 0 ? trn('{count} track down', '{count} tracks down', offset) : trn('{count} track up', '{count} tracks up', -offset);
+      remember(trn('move clip to {target}', 'move {count} clips to {target}', count, { target: label }), before);
       for (const item of items) { const from = tracks[item.index].clips; from.splice(from.indexOf(item.clip), 1); }
       for (const item of items) tracks[item.index + offset].clips.push(item.clip);
-      renderTracks(); syncPlayback(); saveProject(); status(`${count === 1 ? clip.name || 'Clip' : `${count} clips`} moved to ${label}.`);
+      renderTracks(); syncPlayback(); saveProject(); status(tr('{clips} moved to {target}.', { clips: named, target: label }));
     } else if (items.some(i => i.clip.start !== i.start) || (clip.trimStart || 0) !== original.trimStart || (clip.trimEnd || 0) !== original.trimEnd) {
-      remember(mode === 'move' ? `move ${what}` : 'trim clip', before);
+      remember(mode === 'move' ? trn('move clip', 'move {count} clips', count) : tr('trim clip'), before);
       renderTracks(); syncPlayback(); saveProject();
     } else if (!moved && !event.shiftKey && wasSelected && selectedClips.size > 1) selectClip(clip, false);
   };
   element.addEventListener('pointermove', move); element.addEventListener('pointerup', done); element.addEventListener('pointercancel', done);
 }
 
+// Matched against the English source of a message (I18N.sourceOf), so it keeps working in every language.
 const STATUS_ERROR = /^(Invalid length|Could not|Local save failed|Local storage unavailable|Microphone|Devices unavailable|Playback not started|Recording not started|Audio output:|Enable REC|Stop recording before|No unmuted|Recording too long)/;
 let statusTimer = null;
 const status = text => {
   const box = $('status');
-  box.textContent = text; box.dataset.kind = STATUS_ERROR.test(text) ? 'error' : 'info';
+  box.textContent = text; box.dataset.kind = STATUS_ERROR.test(I18N.sourceOf(text)) ? 'error' : 'info';
   box.classList.remove('flash', 'faded'); void box.offsetWidth; box.classList.add('flash');
   clearTimeout(statusTimer);
   statusTimer = setTimeout(function hide() { if (recording) statusTimer = setTimeout(hide, 1000); else box.classList.add('faded'); }, 5000);
@@ -556,8 +558,8 @@ function editName(element, value, commit) {
 const undoStack = [], redoStack = [], selectedClips = new Set(), clipElements = new Map();
 const snapshot = () => ({ nextId, length: timelineLength, markers: [exportIn, exportOut], tracks: tracks.map(({ pending, ...t }) => ({ ...t, clips: t.clips.map(c => ({ ...c })) })) });
 function updateHistoryButtons() {
-  $('undo').disabled = !undoStack.length; $('undo').title = undoStack.length ? `Undo ${undoStack.at(-1).label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
-  $('redo').disabled = !redoStack.length; $('redo').title = redoStack.length ? `Redo ${redoStack.at(-1).label} (Ctrl+Shift+Z)` : 'Redo (Ctrl+Shift+Z)';
+  $('undo').disabled = !undoStack.length; $('undo').title = undoStack.length ? tr('Undo {action} (Ctrl+Z)', { action: undoStack.at(-1).label }) : tr('Undo (Ctrl+Z)');
+  $('redo').disabled = !redoStack.length; $('redo').title = redoStack.length ? tr('Redo {action} (Ctrl+Shift+Z)', { action: redoStack.at(-1).label }) : tr('Redo (Ctrl+Shift+Z)');
 }
 function remember(label, state = snapshot()) {
   undoStack.push({ label, state }); if (undoStack.length > 100) undoStack.shift();
@@ -565,14 +567,14 @@ function remember(label, state = snapshot()) {
 }
 function clearHistory() { undoStack.length = 0; redoStack.length = 0; selectedClips.clear(); updateHistoryButtons(); }
 function travel(from, to, verb) {
-  if (recording) { status(`Stop recording before ${verb === 'Undo' ? 'undoing' : 'redoing'}.`); return; }
+  if (recording) { status(verb === 'Undo' ? tr('Stop recording before undoing.') : tr('Stop recording before redoing.')); return; }
   if (!from.length) return;
   const { label, state } = from.pop();
   to.push({ label, state: snapshot() });
   tracks.splice(0, tracks.length, ...state.tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c })) }))); nextId = state.nextId; timelineLength = state.length ?? null;
   [exportIn, exportOut] = state.markers ?? [0, null];
   selectedClips.clear(); updateHistoryButtons();
-  renderTracks(); syncPlayback(); saveProject(); status(`${verb}: ${label}.`);
+  renderTracks(); syncPlayback(); saveProject(); status(verb === 'Undo' ? tr('Undo: {action}.', { action: label }) : tr('Redo: {action}.', { action: label }));
 }
 const undo = () => travel(undoStack, redoStack, 'Undo'), redo = () => travel(redoStack, undoStack, 'Redo');
 function updateSelection() {
@@ -581,14 +583,14 @@ function updateSelection() {
   updateClipActions(); saveView();
   if (activeEdit?.clip && !selectedClips.has(activeEdit.clip)) activeEdit.finish(true);
 }
-const clipTitle = clip => `${clip.name || 'Clip'} · ${clip.start.toFixed(2)} s · ${clipDuration(clip).toFixed(2)} s · Select (click, Shift+click to add) · Rename (double-click)`;
+const clipTitle = clip => tr('{name} · {start} s · {length} s · Select (click, Shift+click to add) · Rename (double-click)', { name: clip.name || tr('Clip'), start: clip.start.toFixed(2), length: clipDuration(clip).toFixed(2) });
 // Updates only the clip's label, tooltip and the list, without rebuilding the timeline: a rename can end in the middle of
 // a press on another clip (it ends when its clip is deselected), and rebuilding would drop that press.
 function renameClip(clip, name) {
-  remember('rename clip'); clip.name = name;
+  remember(tr('rename clip')); clip.name = name;
   const block = clipElements.get(clip);
   if (block) { block.title = clipTitle(clip); const label = block.querySelector('.clip-label'); if (label) label.textContent = name; }
-  renderClipList(); saveProject(); status(`Clip renamed: ${name}.`);
+  renderClipList(); saveProject(); status(tr('Clip renamed: {name}.', { name }));
 }
 function renderClipList() {
   const clips = tracks.flatMap(track => track.clips.map(clip => ({ clip, track }))).sort((a, b) => a.clip.start - b.clip.start || tracks.indexOf(a.track) - tracks.indexOf(b.track));
@@ -597,17 +599,17 @@ function renderClipList() {
     const item = document.createElement('li'); item.clip = clip;
     item.className = `clip-item${track.muted || clip.muted ? ' muted-clip' : ''}${selectedClips.has(clip) ? ' selected' : ''}`;
     item.style.setProperty('--track-color', trackColor(track));
-    item.title = `${clip.name || 'Clip'}: go to its start and select it (Shift+click to add to the selection) · Rename (double-click)`;
-    const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || 'Clip';
+    item.title = tr('{name}: go to its start and select it (Shift+click to add to the selection) · Rename (double-click)', { name: clip.name || tr('Clip') });
+    const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || tr('Clip');
     const time = document.createElement('span'); time.className = 'clip-item-time'; time.textContent = formatTime(clip.start);
     const meta = document.createElement('span'); meta.className = 'clip-item-meta'; meta.textContent = `${track.name} · ${clipDuration(clip).toFixed(1)} s`;
     const download = document.createElement('button'); download.type = 'button'; download.className = 'clip-download ghost';
-    download.innerHTML = icon('download'); download.title = `Download ${clip.name || 'Clip'} as WAV`;
-    download.onclick = event => { event.stopPropagation(); downloadBlob(new Blob([clipWav(clip)], { type: 'audio/wav' }), `${safeFileName(clip.name || 'Clip')}.wav`); };
+    download.innerHTML = icon('download'); download.title = tr('Download {name} as WAV', { name: clip.name || tr('Clip') });
+    download.onclick = event => { event.stopPropagation(); downloadBlob(new Blob([clipWav(clip)], { type: 'audio/wav' }), `${safeFileName(clip.name || tr('Clip'))}.wav`); };
     download.ondblclick = event => event.stopPropagation();
     item.append(name, time, download, meta);
     item.onclick = event => { if (name.isContentEditable) return; selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
-    item.ondblclick = () => { const edit = editName(name, clip.name || 'Clip', value => renameClip(clip, value)); if (edit) edit.clip = clip; };
+    item.ondblclick = () => { const edit = editName(name, clip.name || tr('Clip'), value => renameClip(clip, value)); if (edit) edit.clip = clip; };
     return item;
   }));
 }
@@ -656,23 +658,23 @@ function selectArea(event, lane) {
 async function importAudio(files, track = tracks.find(t => t.armed) ?? tracks[0], start = playPosition()) {
   if (recording || !files.length || !track) return;
   const audio = getContext(), clips = [], failed = [];
-  status(`Importing ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
+  status(tr('Importing {files}…', { files: files.length === 1 ? files[0].name : trn('{count} file', '{count} files', files.length) }));
   for (const file of files) {
     try {
       const decoded = await audio.decodeAudioData(await file.arrayBuffer());
       const buffer = audio.createBuffer(1, decoded.length, decoded.sampleRate), mono = channel(buffer);
       for (let c = 0; c < decoded.numberOfChannels; c++) { const data = decoded.getChannelData(c); for (let i = 0; i < data.length; i++) mono[i] += data[i] / decoded.numberOfChannels; }
-      clips.push({ name: file.name.replace(/\.[^.]+$/, '') || 'Clip', start: Math.max(0, start), trimStart: 0, trimEnd: 0, buffer }); start += decoded.duration;
+      clips.push({ name: file.name.replace(/\.[^.]+$/, '') || tr('Clip'), start: Math.max(0, start), trimStart: 0, trimEnd: 0, buffer }); start += decoded.duration;
     } catch { failed.push(file.name); }
   }
   if (!tracks.includes(track) || recording) return;
   if (clips.length) {
-    remember(clips.length === 1 ? 'import clip' : `import ${clips.length} clips`);
+    remember(trn('import clip', 'import {count} clips', clips.length));
     track.clips.push(...clips); selectedClips.clear(); clips.forEach(clip => selectedClips.add(clip));
     renderTracks(); syncPlayback(); saveProject();
   }
-  const imported = clips.length ? `${clips.length === 1 ? clips[0].name : `${clips.length} clips`} imported on ${track.name}.` : '';
-  status(failed.length ? `Could not import ${failed.join(', ')}: unsupported audio. ${imported}`.trim() : imported);
+  const imported = clips.length ? tr('{clips} imported on {track}.', { clips: clips.length === 1 ? clips[0].name : trn('{count} clip', '{count} clips', clips.length), track: track.name }) : '';
+  status(!failed.length ? imported : imported ? tr('Could not import {files}: unsupported audio. {imported}', { files: failed.join(', '), imported }) : tr('Could not import {files}: unsupported audio.', { files: failed.join(', ') }));
 }
 // Clip editing buttons: cut the selected clips under the playhead in two, delete the selected clips.
 const CUT_MARGIN = .01;
@@ -685,45 +687,45 @@ function updateClipActions() {
   $('delete-clips').disabled = recording || !selectedClips.size;
   const allMuted = selectedClips.size > 0 && [...selectedClips].every(clip => clip.muted), mute = $('mute-clips');
   mute.disabled = recording || !selectedClips.size;
-  if (mute.getAttribute('aria-pressed') !== String(allMuted)) { mute.setAttribute('aria-pressed', String(allMuted)); mute.title = `${allMuted ? 'Unmute' : 'Mute'} the selected clips (M)`; }
+  if (mute.getAttribute('aria-pressed') !== String(allMuted)) { mute.setAttribute('aria-pressed', String(allMuted)); mute.title = allMuted ? tr('Unmute the selected clips (M)') : tr('Mute the selected clips (M)'); }
 }
 // Mute or unmute the selected clips: mutes them all unless every one is already muted.
 function toggleClipMute() {
   const clips = [...selectedClips];
   if (recording || !clips.length) return;
-  const mute = !clips.every(clip => clip.muted), label = clips.length === 1 ? 'clip' : `${clips.length} clips`;
-  remember(`${mute ? 'mute' : 'unmute'} ${label}`);
+  const mute = !clips.every(clip => clip.muted), named = clips.length === 1 ? clips[0].name || tr('Clip') : trn('{count} clip', '{count} clips', clips.length);
+  remember(mute ? trn('mute clip', 'mute {count} clips', clips.length) : trn('unmute clip', 'unmute {count} clips', clips.length));
   for (const clip of clips) clip.muted = mute;
-  renderTracks(); syncPlayback(); saveProject(); status(`${clips.length === 1 ? clips[0].name || 'Clip' : `${clips.length} clips`} ${mute ? 'muted' : 'unmuted'}.`);
+  renderTracks(); syncPlayback(); saveProject(); status(mute ? tr('{clips} muted.', { clips: named }) : tr('{clips} unmuted.', { clips: named }));
 }
 $('mute-clips').onclick = toggleClipMute;
 // Each half gets its own buffer with only its samples, so the project does not store the audio twice.
 function cutClips() {
   const cuts = clipsToCut();
   if (recording || !cuts.length) return;
-  remember(cuts.length === 1 ? 'cut clip' : `cut ${cuts.length} clips`);
+  remember(trn('cut clip', 'cut {count} clips', cuts.length));
   const time = playPosition(), audio = getContext(), pieces = [];
   const slice = (data, rate, from, to) => { const buffer = audio.createBuffer(1, to - from, rate); buffer.copyToChannel(data.subarray(from, to), 0); return buffer; };
   for (const { clip, track } of cuts) {
     const data = channel(clip.buffer), rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
     const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0 };
-    const right = { ...clip, name: nextNameLike(clip.name || 'Clip'), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
+    const right = { ...clip, name: nextNameLike(clip.name || tr('Clip')), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
     track.clips.splice(track.clips.indexOf(clip), 1, left, right);
     selectedClips.delete(clip); pieces.push(left, right);
   }
   for (const piece of pieces) selectedClips.add(piece);
   renderTracks(); syncPlayback(); saveProject();
-  status(cuts.length === 1 ? `Clip cut at ${formatTime(time)}.` : `${cuts.length} clips cut at ${formatTime(time)}.`);
+  status(trn('Clip cut at {time}.', '{count} clips cut at {time}.', cuts.length, { time: formatTime(time) }));
 }
 $('cut-clip').onclick = cutClips;
 $('delete-clips').onclick = () => deleteSelectedClips();
 function deleteSelectedClips() {
   const count = tracks.reduce((sum, t) => sum + t.clips.filter(c => selectedClips.has(c)).length, 0);
   if (recording || !count) return;
-  remember(count === 1 ? 'remove clip' : `remove ${count} clips`);
+  remember(trn('remove clip', 'remove {count} clips', count));
   for (const track of tracks) track.clips = track.clips.filter(c => !selectedClips.has(c));
   selectedClips.clear();
-  renderTracks(); syncPlayback(); saveProject(); status(`${count} clip${count === 1 ? '' : 's'} removed.`);
+  renderTracks(); syncPlayback(); saveProject(); status(trn('{count} clip removed.', '{count} clips removed.', count));
 }
 function askName(title, value, action) {
   const dialog = $('name-dialog'), input = $('name-input');
@@ -735,12 +737,12 @@ function askName(title, value, action) {
 function armTrack(track) { for (const t of tracks) t.armed = t === track; }
 async function addTrack() {
   if (recording) return;
-  const name = await askName('New track', `Track ${nextId}`, 'Add track');
+  const name = await askName(tr('New track'), tr('Track {n}', { n: nextId }), tr('Add track'));
   if (name === null || recording) return;
-  remember('add track');
+  remember(tr('add track'));
   const track = { id: nextId++, name, armed: true, muted: false, clips: [] };
   tracks.push(track); armTrack(track);
-  renderTracks(); saveProject(); status(`Track added: ${name}.`);
+  renderTracks(); saveProject(); status(tr('Track added: {name}.', { name }));
 }
 function drawWaveform(clip) {
   const width = Math.ceil(clip.buffer.duration * pxPerSecond), height = 44;
@@ -760,7 +762,7 @@ function drawWaveform(clip) {
 }
 // Read-only row with the video's own audio: peaks decoded once per file, drawn in segments around the visible area.
 let videoAudio = null, videoWave = { scale: 0, segments: new Map() };
-const PEAK_RATE = 200, VIDEO_SEGMENT = 2048, VIDEO_AUDIO_NOTES = { loading: 'Reading the video audio…', none: 'No readable audio in this video', large: 'Video too large to draw its audio' };
+const PEAK_RATE = 200, VIDEO_SEGMENT = 2048, VIDEO_AUDIO_NOTES = { loading: () => tr('Reading the video audio…'), none: () => tr('No readable audio in this video'), large: () => tr('Video too large to draw its audio') };
 async function readVideoAudio(file) {
   if (videoAudio?.file === file && file) return;
   const entry = videoAudio = file ? { file, state: 'loading' } : null;
@@ -788,7 +790,7 @@ function renderVideoAudio() {
   $('video-audio-head').hidden = $('video-audio-row').hidden = !videoAudio;
   if (!videoAudio) return;
   $('video-audio-lane').style.width = $('timeline').style.width;
-  $('video-audio-note').textContent = VIDEO_AUDIO_NOTES[videoAudio.state] || '';
+  $('video-audio-note').textContent = VIDEO_AUDIO_NOTES[videoAudio.state]?.() || '';
   drawVideoWave();
 }
 function drawVideoWave() {
@@ -880,50 +882,50 @@ function renderTracks() {
   for (const track of tracks) {
     const row = document.createElement('div'); row.className = 'lane-row'; row.style.setProperty('--track-color', trackColor(track));
     const title = document.createElement('span'); title.className = 'track-name'; title.textContent = track.name;
-    title.title = 'Rename track (double-click)';
-    title.ondblclick = () => editName(title, track.name, name => { remember('rename track'); track.name = name; renderTracks(); saveProject(); status(`Track renamed: ${name}.`); });
-    const rec = document.createElement('button'); rec.type = 'button'; setIconButton(rec, 'record', 'REC', track.armed ? `${track.name} records` : `Record on ${track.name}`); rec.setAttribute('aria-pressed', String(track.armed)); rec.disabled = recording;
-    rec.setAttribute('aria-label', `Record on track ${track.id}`);
-    rec.onclick = () => { if (track.armed) return; remember('move REC'); armTrack(track); renderTracks(); saveProject(); };
-    const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'muted'; setIconButton(mute, track.muted ? 'mute' : 'volume', 'Mute', `Toggle mute on ${track.name}`); mute.setAttribute('aria-pressed', String(track.muted));
-    mute.setAttribute('aria-label', `Mute track ${track.id}`);
-    mute.onclick = () => { remember(track.muted ? 'unmute' : 'mute'); track.muted = !track.muted; renderTracks(); syncPlayback(); saveProject(); };
+    title.title = tr('Rename track (double-click)');
+    title.ondblclick = () => editName(title, track.name, name => { remember(tr('rename track')); track.name = name; renderTracks(); saveProject(); status(tr('Track renamed: {name}.', { name })); });
+    const rec = document.createElement('button'); rec.type = 'button'; setIconButton(rec, 'record', tr('REC'), track.armed ? tr('{track} records', { track: track.name }) : tr('Record on {track}', { track: track.name })); rec.setAttribute('aria-pressed', String(track.armed)); rec.disabled = recording;
+    rec.setAttribute('aria-label', tr('Record on track {n}', { n: track.id }));
+    rec.onclick = () => { if (track.armed) return; remember(tr('move REC')); armTrack(track); renderTracks(); saveProject(); };
+    const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'muted'; setIconButton(mute, track.muted ? 'mute' : 'volume', tr('Mute'), tr('Toggle mute on {track}', { track: track.name })); mute.setAttribute('aria-pressed', String(track.muted));
+    mute.setAttribute('aria-label', tr('Mute track {n}', { n: track.id }));
+    mute.onclick = () => { remember(track.muted ? tr('unmute track') : tr('mute track')); track.muted = !track.muted; renderTracks(); syncPlayback(); saveProject(); };
     const menu = document.createElement('div'); menu.className = 'menu'; menu.id = `track-menu-${track.id}`; menu.popover = 'auto';
     const more = document.createElement('button'); more.type = 'button'; more.className = 'icon-button ghost track-more'; more.innerHTML = icon('more');
-    more.title = `More actions for ${track.name}`; more.setAttribute('aria-label', `More actions for track ${track.id}`); more.popoverTargetElement = menu;
+    more.title = tr('More actions for {track}', { track: track.name }); more.setAttribute('aria-label', tr('More actions for track {n}', { n: track.id })); more.popoverTargetElement = menu;
     menu.addEventListener('toggle', event => { more.classList.toggle('open', event.newState === 'open'); if (event.newState === 'open') anchorPopover(menu, more); });
-    const remove = document.createElement('button'); remove.type = 'button'; setIconButton(remove, 'trash', 'Remove track', `Remove ${track.name}`);
+    const remove = document.createElement('button'); remove.type = 'button'; setIconButton(remove, 'trash', tr('Remove track'), tr('Remove {track}', { track: track.name }));
     remove.className = 'menu-item danger-item'; remove.disabled = recording;
     remove.onclick = async () => {
       menu.hidePopover();
-      if (track.clips.length && !await ask(`Remove ${track.name}?`, 'The track and all its recordings will be deleted.', 'Remove track')) return;
+      if (track.clips.length && !await ask(tr('Remove {track}?', { track: track.name }), tr('The track and all its recordings will be deleted.'), tr('Remove track'))) return;
       const index = tracks.indexOf(track);
       if (index < 0) return;
-      remember('remove track');
+      remember(tr('remove track'));
       tracks.splice(index, 1);
-      renderTracks(); syncPlayback(); saveProject(); status(`Track ${track.id} removed.`);
+      renderTracks(); syncPlayback(); saveProject(); status(tr('{track} removed.', { track: track.name }));
     };
-    const swatches = document.createElement('div'); swatches.className = 'swatches'; swatches.setAttribute('role', 'group'); swatches.setAttribute('aria-label', 'Track color');
+    const swatches = document.createElement('div'); swatches.className = 'swatches'; swatches.setAttribute('role', 'group'); swatches.setAttribute('aria-label', tr('Track color'));
     for (const [label, color] of TRACK_COLORS) {
       const swatch = document.createElement('button'); swatch.type = 'button'; swatch.className = 'swatch'; swatch.style.setProperty('--swatch', color);
-      swatch.title = `${label}`; swatch.setAttribute('aria-label', label); swatch.setAttribute('aria-pressed', String(trackColor(track) === color));
-      swatch.onclick = () => { menu.hidePopover(); if (trackColor(track) === color) return; remember('change color'); track.color = color; renderTracks(); saveProject(); };
+      swatch.title = label; swatch.setAttribute('aria-label', label); swatch.setAttribute('aria-pressed', String(trackColor(track) === color));
+      swatch.onclick = () => { menu.hidePopover(); if (trackColor(track) === color) return; remember(tr('change color')); track.color = color; renderTracks(); saveProject(); };
       swatches.append(swatch);
     }
-    const colorLabel = document.createElement('span'); colorLabel.className = 'menu-label'; colorLabel.textContent = 'Color';
+    const colorLabel = document.createElement('span'); colorLabel.className = 'menu-label'; colorLabel.textContent = tr('Color');
     const separator = document.createElement('div'); separator.className = 'menu-separator'; separator.setAttribute('role', 'separator');
     menu.append(colorLabel, swatches, separator, remove);
     const top = document.createElement('div'); top.className = 'track-head-top'; top.append(title, more, menu);
     const volume = document.createElement('button'); volume.type = 'button'; volume.className = 'volume-handle'; volume.setAttribute('aria-haspopup', 'true');
-    showVolumeHandle(volume, track.volume ?? 1, `Volume of ${track.name}`);
+    showVolumeHandle(volume, track.volume ?? 1, tr('Volume of {track}', { track: track.name }));
     let adjusting = false;
     volume.onclick = () => openVolume(volume, {
       title: track.name, get: () => track.volume ?? 1,
-      set: gain => { if (!adjusting) { remember('change volume'); adjusting = true; } track.volume = gain; applyVolume(track); showVolumeHandle(volume, gain, `Volume of ${track.name}`); },
+      set: gain => { if (!adjusting) { remember(tr('change volume')); adjusting = true; } track.volume = gain; applyVolume(track); showVolumeHandle(volume, gain, tr('Volume of {track}', { track: track.name })); },
       commit: () => { adjusting = false; saveProject(); },
     });
     const bottom = document.createElement('div'); bottom.className = 'track-head-bottom'; bottom.append(rec, mute);
-    const meter = document.createElement('span'); meter.className = 'out-meter'; meter.title = 'Output level';
+    const meter = document.createElement('span'); meter.className = 'out-meter'; meter.title = tr('Output level');
     const meterFill = document.createElement('span'); meterFill.className = 'out-meter-fill'; meter.append(meterFill); outputMeters.set(track, meterFill);
     const mix = document.createElement('div'); mix.className = 'track-mix'; mix.append(volume, meter);
     const head = document.createElement('div'); head.className = 'track-head'; head.style.setProperty('--track-color', trackColor(track)); head.append(top, bottom, mix); $('track-heads').append(head);
@@ -937,25 +939,25 @@ function renderTracks() {
       block.title = clipTitle(clip);
       const wave = drawWaveform(clip);
       if (wave) block.append(wave);
-      const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = clip.name || 'Clip'; block.append(label);
+      const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = clip.name || tr('Clip'); block.append(label);
       for (const side of ['left', 'right']) {
         const handle = document.createElement('span'); handle.className = `clip-handle ${side}`;
-        handle.setAttribute('aria-label', `Edit clip ${side === 'left' ? 'start' : 'end'}`);
-        handle.title = `Edit clip ${side === 'left' ? 'start' : 'end'} (drag)`;
+        handle.setAttribute('aria-label', side === 'left' ? tr('Edit clip start') : tr('Edit clip end'));
+        handle.title = side === 'left' ? tr('Edit clip start (drag)') : tr('Edit clip end (drag)');
         handle.addEventListener('pointerdown', e => editClip(e, clip, side, block)); block.append(handle);
       }
       block.addEventListener('pointerdown', e => { if (e.target === block) editClip(e, clip, 'move', block); });
       block.addEventListener('dblclick', e => {
         if (e.target !== block) return;
         e.stopPropagation();
-        const edit = editName(label, clip.name || 'Clip', name => renameClip(clip, name));
+        const edit = editName(label, clip.name || tr('Clip'), name => renameClip(clip, name));
         if (edit) edit.clip = clip;
       });
       lane.append(block);
     }
     if (track.pending) {
       const block = document.createElement('div'); block.className = 'clip recording-clip'; block.style.left = `${track.pending.start * pxPerSecond}px`;
-      const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = 'Recording…'; block.append(label);
+      const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = tr('Recording…'); block.append(label);
       lane.append(block); recordingPreview = { track, element: block, segments: [], peaks: [], chunk: 0, offset: 0, sample: 0, drawn: 0, scale: pxPerSecond };
     }
     row.append(lane); $('tracks').append(row);
@@ -1006,7 +1008,7 @@ function sliderToGain(position) {
 const gainToSlider = gain => gain <= 0 ? 0 : Math.round(1000 * (1 - Math.sqrt(Math.max(0, Math.min(1, (MAX_DB - 20 * Math.log10(gain)) / (MAX_DB - MIN_DB))))));
 function showVolumeHandle(button, gain, label) {
   const db = formatDb(gain);
-  button.textContent = db; button.title = `${label}: ${db} dB (click to change)`; button.setAttribute('aria-label', `${label}: ${db} dB`);
+  button.textContent = db; button.title = tr('{label}: {db} dB (click to change)', { label, db }); button.setAttribute('aria-label', tr('{label}: {db} dB', { label, db }));
 }
 // One shared popover slider edits whichever volume handle was clicked.
 let volumeTarget = null;
@@ -1031,7 +1033,7 @@ function formatDb(gain) {
   const db = 20 * Math.log10(gain);
   return Math.abs(db) < .05 ? '0.0' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`;
 }
-const TRACK_COLORS = [['Violet', '#8b7bff'], ['Blue', '#4f8cff'], ['Cyan', '#3cc8e6'], ['Green', '#3ee0a1'], ['Yellow', '#ffc857'], ['Orange', '#ff9454'], ['Red', '#ff5f7e'], ['Pink', '#e879f9']];
+const TRACK_COLORS = [[tr('Violet'), '#8b7bff'], [tr('Blue'), '#4f8cff'], [tr('Cyan'), '#3cc8e6'], [tr('Green'), '#3ee0a1'], [tr('Yellow'), '#ffc857'], [tr('Orange'), '#ff9454'], [tr('Red'), '#ff5f7e'], [tr('Pink'), '#e879f9']];
 const validColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const trackColor = track => validColor(track.color) ? track.color : TRACK_COLORS[(track.id - 1) % TRACK_COLORS.length][1];
 function applyVolume(track) { for (const source of playingSources) if (source.track === track) source.level.gain.setTargetAtTime(track.volume, context.currentTime, .02); }
@@ -1066,19 +1068,19 @@ async function listDevices() {
     const devices = await navigator.mediaDevices.enumerateDevices();
     for (const [kind, selectId] of [['audioinput', 'input-device'], ['audiooutput', 'output-device']]) {
       const select = $(selectId), previous = select.value;
-      select.replaceChildren(new Option('Default', ''));
-      devices.filter(d => d.kind === kind).forEach((d, i) => select.add(new Option(d.label || `${kind === 'audioinput' ? 'Microphone' : 'Output'} ${i + 1}`, d.deviceId)));
+      select.replaceChildren(new Option(tr('Default'), ''));
+      devices.filter(d => d.kind === kind).forEach((d, i) => select.add(new Option(d.label || (kind === 'audioinput' ? tr('Microphone {n}', { n: i + 1 }) : tr('Output {n}', { n: i + 1 })), d.deviceId)));
       if ([...select.options].some(o => o.value === previous)) select.value = previous;
     }
-  } catch (error) { status(`Devices unavailable: ${error.message}`); }
+  } catch (error) { status(tr('Devices unavailable: {message}', { message: error.message })); }
 }
 async function setOutput() {
   const id = $('output-device').value || 'default';
   try {
-    if (!video.setSinkId || !getContext().setSinkId) throw new Error('output selection not supported by this browser');
+    if (!video.setSinkId || !getContext().setSinkId) throw new Error(tr('output selection not supported by this browser'));
     await video.setSinkId(id); await context.setSinkId(id);
-    status('Audio output updated.');
-  } catch (error) { status(`Audio output: ${error.message}`); }
+    status(tr('Audio output updated.'));
+  } catch (error) { status(tr('Audio output: {message}', { message: error.message })); }
 }
 let monitoring = false, monitorNode = null;
 try { monitoring = localStorage.getItem('audiorec-monitor') === 'on'; } catch {}
@@ -1086,7 +1088,7 @@ function updateMonitor() {
   if (monitoring && source && !monitorNode) { monitorNode = context.createGain(); source.connect(monitorNode); monitorNode.connect(context.destination); }
   if ((!monitoring || !source) && monitorNode) { try { source?.disconnect(monitorNode); } catch {} monitorNode.disconnect(); monitorNode = null; }
   $('monitor').setAttribute('aria-pressed', String(monitoring));
-  $('monitor').title = monitoring ? 'Stop hearing the microphone' : 'Monitor: hear the microphone, use headphones to avoid feedback';
+  $('monitor').title = monitoring ? tr('Stop hearing the microphone') : tr('Monitor: hear the microphone, use headphones to avoid feedback');
 }
 // Enhanced audio = the browser's echo cancellation, noise suppression and auto gain. Off by default (raw microphone);
 // always off while monitoring, where it made the monitored voice duck and drop out.
@@ -1095,30 +1097,30 @@ try { enhancedAudio = localStorage.getItem('audiorec-enhanced') === 'on'; } catc
 const micProcessing = () => { const on = enhancedAudio && !monitoring; return { echoCancellation: on, noiseSuppression: on, autoGainControl: on }; };
 async function applyMicProcessing() {
   if (stream && recording) { for (const track of stream.getAudioTracks()) track.applyConstraints(micProcessing()).catch(() => {}); }
-  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); } }
+  else if (stream) { stopMonitoring(); try { await startMonitoring(); } catch (error) { stopMonitoring(); status(tr('Microphone unavailable: {message}', { message: error.message })); } }
 }
 function updateEnhancedButton() {
   const button = $('enhanced-audio');
   button.setAttribute('aria-pressed', String(enhancedAudio));
-  button.title = enhancedAudio ? 'Turn off enhanced audio: record the raw microphone' : 'Turn on enhanced audio: echo cancellation, noise suppression and automatic gain';
-  $('enhanced-state').textContent = !enhancedAudio ? 'Off: raw microphone' : monitoring ? 'On, paused while Monitor is on' : 'On';
+  button.title = enhancedAudio ? tr('Turn off enhanced audio: record the raw microphone') : tr('Turn on enhanced audio: echo cancellation, noise suppression and automatic gain');
+  $('enhanced-state').textContent = !enhancedAudio ? tr('Off: raw microphone') : monitoring ? tr('On, paused while Monitor is on') : tr('On');
 }
 async function toggleEnhancedAudio() {
   enhancedAudio = !enhancedAudio;
   try { localStorage.setItem('audiorec-enhanced', enhancedAudio ? 'on' : 'off'); } catch {}
   updateEnhancedButton(); await applyMicProcessing();
-  status(enhancedAudio ? 'Enhanced audio on.' : 'Enhanced audio off: recording the raw microphone.');
+  status(enhancedAudio ? tr('Enhanced audio on.') : tr('Enhanced audio off: recording the raw microphone.'));
 }
 async function toggleMonitor() {
   monitoring = !monitoring;
   try { localStorage.setItem('audiorec-monitor', monitoring ? 'on' : 'off'); } catch {}
   updateEnhancedButton(); await applyMicProcessing();
   if (monitoring && !stream && !recording) {
-    if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); }
-    else try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
+    if (!navigator.mediaDevices?.getUserMedia) { status(tr('Microphone only available on localhost or HTTPS.')); }
+    else try { await startMonitoring(); } catch (error) { stopMonitoring(); status(tr('Microphone unavailable: {message}', { message: error.message })); }
   }
   updateMonitor();
-  status(monitoring ? 'Monitor on: you hear the microphone.' : 'Monitor off.');
+  status(monitoring ? tr('Monitor on: you hear the microphone.') : tr('Monitor off.'));
 }
 function stopMonitoring() {
   if (meterFrame) cancelAnimationFrame(meterFrame);
@@ -1128,7 +1130,7 @@ function stopMonitoring() {
   stream?.getTracks().forEach(t => t.stop());
   stream = null; source = null; analyser = null;
   $('mic-level').value = 0; meterLevel = 0; clipUntil = 0; showInputLevel(0);
-  $('mic-state').textContent = 'Inactive';
+  $('mic-state').textContent = tr('Inactive');
   updateMicButton();
 }
 async function startMonitoring() {
@@ -1150,7 +1152,7 @@ async function startMonitoring() {
       meterFrame = requestAnimationFrame(update);
     };
     update();
-    $('mic-state').textContent = 'Listening';
+    $('mic-state').textContent = tr('Listening');
     updateMicButton();
     await listDevices();
   } catch (error) { mic.getTracks().forEach(t => t.stop()); throw error; }
@@ -1172,7 +1174,7 @@ function finishRecording() {
   recording = false;
   processor.disconnect(); silentGain.disconnect();
   stopMonitoring();
-  if (tracks.some(t => t.pending?.chunks.length)) remember('recording');
+  if (tracks.some(t => t.pending?.chunks.length)) remember(tr('recording'));
   for (const track of tracks) {
     if (!track.pending) continue;
     const { chunks, start, sampleRate } = track.pending;
@@ -1186,14 +1188,14 @@ function finishRecording() {
     delete track.pending;
   }
   updateRecordButton();
-  $('input-device').disabled = false; $('test-mic').disabled = false; renderTracks(); status('Recording complete. Saving locally…');
-  saveProject().then(() => { if ($('status').textContent === 'Recording complete. Saving locally…') status('Recording saved in the browser. Press Play to listen back.'); });
+  $('input-device').disabled = false; $('test-mic').disabled = false; renderTracks(); status(tr('Recording complete. Saving locally…'));
+  saveProject().then(() => { if ($('status').textContent === tr('Recording complete. Saving locally…')) status(tr('Recording saved in the browser. Press Play to listen back.')); });
   if (monitoring) startMonitoring().catch(() => {});
 }
 async function toggleRecording() {
   if (recording) { finishRecording(); return; }
-  if (!tracks.some(t => t.armed)) { status('Enable REC on at least one track.'); return; }
-  if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); return; }
+  if (!tracks.some(t => t.armed)) { status(tr('Enable REC on at least one track.')); return; }
+  if (!navigator.mediaDevices?.getUserMedia) { status(tr('Microphone only available on localhost or HTTPS.')); return; }
   $('record').disabled = true;
   try {
     const audio = getContext(); await audio.resume();
@@ -1210,20 +1212,20 @@ async function toggleRecording() {
     };
     source.connect(processor); processor.connect(silentGain); silentGain.connect(audio.destination);
     recording = true; updateRecordButton(); stopPlayback();
-    $('input-device').disabled = true; $('test-mic').disabled = true; renderTracks(); requestAnimationFrame(updateRecordingPreview); status('Recording…');
+    $('input-device').disabled = true; $('test-mic').disabled = true; renderTracks(); requestAnimationFrame(updateRecordingPreview); status(tr('Recording…'));
   } catch (error) {
     stopMonitoring();
     for (const track of tracks) delete track.pending;
-    status(`Recording not started: ${error.message}`);
+    status(tr('Recording not started: {message}', { message: error.message }));
   } finally { $('record').disabled = false; }
 }
 let projectHandle = null;
-const PROJECT_TYPES = [{ description: 'Audiorec project', accept: { 'application/octet-stream': ['.audiorec'] } }];
+const PROJECT_TYPES = [{ description: tr('Audiorec project'), accept: { 'application/octet-stream': ['.audiorec'] } }];
 let projectName = null;
 function showProjectName(name) {
   projectName = name || null;
-  $('project-name').textContent = name ? name.replace(/\.audiorec$/i, '') : 'Untitled project';
-  $('project-name').title = name || 'Not saved to a file yet';
+  $('project-name').textContent = name ? name.replace(/\.audiorec$/i, '') : tr('Untitled project');
+  $('project-name').title = name || tr('Not saved to a file yet');
 }
 function rememberProjectFile(handle) {
   projectHandle = handle; showProjectName(handle?.name);
@@ -1257,7 +1259,7 @@ async function saveProjectFile() {
       const fileName = suggested.replace(/[\/:*?"<>|]/g, '-');
       downloadBlob(blob, fileName);
       showProjectName(fileName); saveProject();
-      status(`Project downloaded as ${fileName} (this browser cannot overwrite files).`);
+      status(tr('Project downloaded as {file} (this browser cannot overwrite files).', { file: fileName }));
       return;
     }
     let handle = projectHandle;
@@ -1266,45 +1268,45 @@ async function saveProjectFile() {
     const writable = await handle.createWritable();
     await writable.write(blob); await writable.close();
     rememberProjectFile(handle); saveProject();
-    status(`Project saved to ${handle.name}.`);
+    status(tr('Project saved to {file}.', { file: handle.name }));
   } catch (error) {
-    if (error.name !== 'AbortError') status(`Could not save project: ${error.message}`);
+    if (error.name !== 'AbortError') status(tr('Could not save project: {message}', { message: error.message }));
   }
 }
 async function openProject(file, handle = null) {
-  if (recording) { status('Stop recording before opening a project.'); return; }
+  if (recording) { status(tr('Stop recording before opening a project.')); return; }
   try {
     const bytes = await file.arrayBuffer(), view = new DataView(bytes);
-    if (bytes.byteLength < 12 || new TextDecoder().decode(new Uint8Array(bytes, 0, 8)) !== 'AUDIOREC') throw new Error('unrecognized format');
+    if (bytes.byteLength < 12 || new TextDecoder().decode(new Uint8Array(bytes, 0, 8)) !== 'AUDIOREC') throw new Error(tr('unrecognized format'));
     const jsonLength = view.getUint32(8, true);
-    if (jsonLength > bytes.byteLength - 12) throw new Error('incomplete file');
+    if (jsonLength > bytes.byteLength - 12) throw new Error(tr('incomplete file'));
     const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
-    if (![1, 2, 3, 4].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error('unsupported version');
-    if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error('invalid length');
+    if (![1, 2, 3, 4].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
+    if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error(tr('invalid length'));
     let position = 12 + jsonLength;
     const videoSize = manifest.video?.size || 0;
-    if (!Number.isSafeInteger(videoSize) || videoSize < 0 || videoSize > bytes.byteLength - position) throw new Error('invalid video');
+    if (!Number.isSafeInteger(videoSize) || videoSize < 0 || videoSize > bytes.byteLength - position) throw new Error(tr('invalid video'));
     const importedVideo = manifest.video ? new File([bytes.slice(position, position + videoSize)], manifest.video.name, { type: manifest.video.type }) : null;
     position += videoSize;
     const audio = getContext();
     const importedTracks = manifest.tracks.map(track => {
-      if (!Array.isArray(track.clips) || !Number.isSafeInteger(track.id)) throw new Error('invalid track');
-      if ((manifest.version >= 2 && !validVolume(track.volume)) || (manifest.version >= 3 && !validColor(track.color))) throw new Error('invalid track');
-      return { id: track.id, name: track.name || `Track ${track.id}`, armed: !!track.armed, muted: !!track.muted, volume: manifest.version >= 2 ? track.volume : 1, color: manifest.version >= 3 ? track.color : undefined,
+      if (!Array.isArray(track.clips) || !Number.isSafeInteger(track.id)) throw new Error(tr('invalid track'));
+      if ((manifest.version >= 2 && !validVolume(track.volume)) || (manifest.version >= 3 && !validColor(track.color))) throw new Error(tr('invalid track'));
+      return { id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, volume: manifest.version >= 2 ? track.volume : 1, color: manifest.version >= 3 ? track.color : undefined,
         clips: track.clips.map(clip => {
           const { sampleCount, sampleRate } = clip;
-          if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || sampleCount * 4 > bytes.byteLength - position) throw new Error('invalid audio');
+          if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || sampleCount * 4 > bytes.byteLength - position) throw new Error(tr('invalid audio'));
           const samples = new Float32Array(sampleCount);
           for (let i = 0; i < sampleCount; i++) samples[i] = view.getFloat32(position + i * 4, true);
           position += sampleCount * 4;
           const buffer = audio.createBuffer(1, sampleCount, sampleRate);
           buffer.copyToChannel(samples, 0);
-          if (!Number.isFinite(clip.start) || clip.start < 0 || !Number.isFinite(clip.trimStart) || clip.trimStart < 0 || !Number.isFinite(clip.trimEnd) || clip.trimEnd < 0 || clip.trimStart + clip.trimEnd >= buffer.duration) throw new Error('invalid clip');
-          return { name: clip.name || 'Clip', start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: !!clip.muted, buffer };
+          if (!Number.isFinite(clip.start) || clip.start < 0 || !Number.isFinite(clip.trimStart) || clip.trimStart < 0 || !Number.isFinite(clip.trimEnd) || clip.trimEnd < 0 || clip.trimStart + clip.trimEnd >= buffer.duration) throw new Error(tr('invalid clip'));
+          return { name: clip.name || tr('Clip'), start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: !!clip.muted, buffer };
         }) };
     });
-    if (position !== bytes.byteLength || !Number.isSafeInteger(manifest.nextId) || manifest.nextId <= Math.max(0, ...importedTracks.map(t => t.id))) throw new Error('invalid project file');
-    if (!await ask('Open project?', 'The current project will be replaced.', 'Open project', false)) return;
+    if (position !== bytes.byteLength || !Number.isSafeInteger(manifest.nextId) || manifest.nextId <= Math.max(0, ...importedTracks.map(t => t.id))) throw new Error(tr('invalid project file'));
+    if (!await ask(tr('Open project?'), tr('The current project will be replaced.'), tr('Open project'), false)) return;
     stopOvertime(); cursor = null; video.pause(); stopPlayback(); stopMonitoring();
     if (videoURL) URL.revokeObjectURL(videoURL);
     selectedVideo = importedVideo;
@@ -1314,14 +1316,14 @@ async function openProject(file, handle = null) {
     video.muted = !!manifest.videoMuted; setVideoGain(validVolume(manifest.videoVolume) ? manifest.videoVolume : 1);
     tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; restoreMarkers(manifest); clearHistory();
     rememberProjectFile(handle); showProjectName(handle?.name || file.name);
-    renderTracks(); await saveProject(); status(`Project opened: ${file.name}.`);
-  } catch (error) { status(`Could not open project: ${error.message}`); }
+    renderTracks(); await saveProject(); status(tr('Project opened: {file}.', { file: file.name }));
+  } catch (error) { status(tr('Could not open project: {message}', { message: error.message })); }
 }
 async function newProject() {
-  if (recording) { status('Stop recording before starting a new project.'); return; }
+  if (recording) { status(tr('Stop recording before starting a new project.')); return; }
   const hasContent = selectedVideo || tracks.some(t => t.clips.length);
-  const message = hasContent ? 'The current video and recordings will be cleared. Use “Save project” first to keep a copy.' : '';
-  if (!await ask('Start a new project?', message, 'New project', !!hasContent)) return;
+  const message = hasContent ? tr('The current video and recordings will be cleared. Use “Save project” first to keep a copy.') : '';
+  if (!await ask(tr('Start a new project?'), message, tr('New project'), !!hasContent)) return;
   stopOvertime(); cursor = null; video.pause(); stopPlayback(); stopMonitoring();
   if (videoURL) URL.revokeObjectURL(videoURL);
   selectedVideo = null; videoURL = null;
@@ -1331,8 +1333,8 @@ async function newProject() {
   showVideoName(null);
   video.muted = false; setVideoGain(1);
   nextId = 1; timelineLength = null; exportIn = 0; exportOut = null; clearHistory();
-  tracks.splice(0, tracks.length, { id: nextId, name: `Track ${nextId++}`, armed: true, muted: false, clips: [] });
-  renderTracks(); await saveProject(); status('New project started.');
+  tracks.splice(0, tracks.length, { id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
+  renderTracks(); await saveProject(); status(tr('New project started.'));
 }
 // Export: audio only (WAV) or video + audio (MP4 with the original video packets copied and the new mix as soundtrack),
 // over a chosen range. The mix is rendered offline with the same clip scheduling and fades as syncPlayback.
@@ -1350,9 +1352,9 @@ function defaultExportEnd(kind) {
 }
 function readExportRange() {
   const start = $('export-start').value.trim() ? parseLength($('export-start').value) : 0, end = parseLength($('export-end').value);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return { error: 'Start and end: use mm:ss:ff, mm:ss or seconds.' };
-  if (end <= start) return { error: 'The end must come after the start.' };
-  if (exportKind() === 'video' && end > videoDuration() + .001) return { error: `The video ends at ${formatTime(videoDuration())}.` };
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { error: tr('Start and end: use mm:ss:ff, mm:ss or seconds.') };
+  if (end <= start) return { error: tr('The end must come after the start.') };
+  if (exportKind() === 'video' && end > videoDuration() + .001) return { error: tr('The video ends at {time}.', { time: formatTime(videoDuration()) }) };
   return { start, end };
 }
 function setExportRange(start, end) { $('export-start').value = formatTime(start); $('export-end').value = formatTime(end); updateExportDialog(); }
@@ -1360,7 +1362,7 @@ function updateExportDialog() {
   const kind = exportKind(), check = $('export-video-audio'), range = readExportRange();
   check.disabled = !!exporting || !selectedVideo || videoAudio?.state === 'none';
   check.checked = !check.disabled && exportVideoAudio[kind];
-  $('export-summary').textContent = range.error || `${formatTime(range.end - range.start)} long · ${exportFileName(kind)}`;
+  $('export-summary').textContent = range.error || tr('{length} long · {file}', { length: formatTime(range.end - range.start), file: exportFileName(kind) });
   $('export-summary').classList.toggle('error', !!range.error);
   $('export-ok').disabled = !!range.error || !!exporting;
   $('export-selection').disabled = !!exporting || !selectedClips.size;
@@ -1369,7 +1371,7 @@ function openExport() {
   if (recording) finishRecording();
   const hasVideo = videoDuration() > 0, videoRadio = $('export-kind-video');
   videoRadio.disabled = !hasVideo || !canExportVideo;
-  $('export-video-hint').textContent = !hasVideo ? 'Choose a video first' : !canExportVideo ? 'Not supported in this browser' : 'MP4: original picture, new soundtrack';
+  $('export-video-hint').textContent = !hasVideo ? tr('Choose a video first') : !canExportVideo ? tr('Not supported in this browser') : tr('MP4: original picture, new soundtrack');
   if (videoRadio.disabled && videoRadio.checked) document.querySelector('input[name="export-kind"][value="audio"]').checked = true;
   $('export-progress').hidden = true;
   setMarkerRange();
@@ -1395,16 +1397,16 @@ $('export-dialog').addEventListener('close', () => { if (exporting) { exporting.
 $('export-dialog').querySelector('form').onsubmit = event => { event.preventDefault(); runExport(); };
 async function decodeVideoAudio(rate) {
   if (decodedVideoAudio?.file === selectedVideo && decodedVideoAudio.rate === rate) return decodedVideoAudio.buffer;
-  if (selectedVideo.size > 1.5e9) throw new Error('the video is too large to read its audio');
+  if (selectedVideo.size > 1.5e9) throw new Error(tr('the video is too large to read its audio'));
   let buffer;
   try { buffer = await new OfflineAudioContext(2, 1, rate).decodeAudioData(await selectedVideo.arrayBuffer()); }
-  catch { throw new Error('the video audio could not be read'); }
+  catch { throw new Error(tr('the video audio could not be read')); }
   decodedVideoAudio = { file: selectedVideo, rate, buffer };
   return buffer;
 }
 function renderMix(start, end, rate, channels, videoBuffer) {
   const length = Math.max(1, Math.round((end - start) * rate));
-  if (length * channels * 4 > 2e9) throw new Error('the range is too long to export at once');
+  if (length * channels * 4 > 2e9) throw new Error(tr('the range is too long to export at once'));
   const offline = new OfflineAudioContext(channels, length, rate);
   if (videoBuffer && start < videoBuffer.duration) {
     const node = offline.createBufferSource(), level = offline.createGain();
@@ -1432,7 +1434,7 @@ function renderMix(start, end, rate, channels, videoBuffer) {
 const wavBlob = buffer => new Blob([wavBytes(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)), buffer.sampleRate)], { type: 'audio/wav' });
 function wavBytes(data, rate) {
   const channels = data.length, length = data[0].length, size = length * channels * 2;
-  if (size + 44 > 0xffffffff) throw new Error('the range is too long for a single WAV');
+  if (size + 44 > 0xffffffff) throw new Error(tr('the range is too long for a single WAV'));
   const bytes = new ArrayBuffer(44 + size), view = new DataView(bytes);
   const text = (at, value) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
   text(0, 'RIFF'); view.setUint32(4, 36 + size, true); text(8, 'WAVE'); text(12, 'fmt ');
@@ -1447,7 +1449,7 @@ function downloadBlob(blob, name) {
   link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'Clip';
+const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || tr('Clip');
 // One clip as it plays: trimmed, with the playback fades, without the track volume.
 function clipWav(clip) {
   const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
@@ -1470,7 +1472,7 @@ function zipBlob(files) {
     parts.push(header(30, [[0, 32, 0x04034b50], [4, 16, 20], [6, 16, 0x800], ...common]), nameBytes, data);
     central.push(header(46, [[0, 32, 0x02014b50], [4, 16, 20], [6, 16, 20], [8, 16, 0x800], ...common.map(([at, bits, value]) => [at + 2, bits, value]), [42, 32, offset]]), nameBytes);
     offset += 30 + nameBytes.length + data.length;
-    if (offset > 0xffffffff) throw new Error('the clips are too large for one ZIP');
+    if (offset > 0xffffffff) throw new Error(tr('the clips are too large for one ZIP'));
   }
   const size = central.reduce((total, part) => total + part.byteLength, 0), end = new DataView(new ArrayBuffer(22));
   end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, size, true); end.setUint32(16, offset, true);
@@ -1481,21 +1483,21 @@ function downloadAllClips() {
   if (!clips.length) return;
   try {
     const files = clips.map(clip => {
-      const base = safeFileName(clip.name || 'Clip');
+      const base = safeFileName(clip.name || tr('Clip'));
       let name = `${base}.wav`;
       for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n}).wav`;
       used.add(name.toLowerCase());
       return { name, data: clipWav(clip) };
     });
     const zipName = `${exportBaseName()}-clips.zip`;
-    downloadBlob(zipBlob(files), zipName); status(`${files.length} clip${files.length === 1 ? '' : 's'} downloaded as ${zipName}.`);
-  } catch (error) { status(`Download failed: ${error.message}`); }
+    downloadBlob(zipBlob(files), zipName); status(trn('{count} clip downloaded as {file}.', '{count} clips downloaded as {file}.', files.length, { file: zipName }));
+  } catch (error) { status(tr('Download failed: {message}', { message: error.message })); }
 }
 $('clip-zip').onclick = downloadAllClips;
 function showClipList(open) {
   $('clip-list').classList.toggle('collapsed', !open);
   $('clip-list-toggle').setAttribute('aria-expanded', String(open));
-  $('clip-list-toggle').title = open ? 'Hide the clip list' : 'Show the clip list';
+  $('clip-list-toggle').title = open ? tr('Hide the clip list') : tr('Show the clip list');
   try { localStorage.setItem('audiorec-clip-list', open ? 'shown' : 'hidden'); } catch {}
 }
 $('clip-list-toggle').onclick = () => showClipList($('clip-list').classList.contains('collapsed'));
@@ -1505,9 +1507,9 @@ async function muxVideo(mix, { start, end }, job) {
   const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.BlobSource(selectedVideo) });
   const output = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
   const conversion = job.conversion = await mb.Conversion.init({ input, output, composable: true, tracks: 'primary', audio: { discard: true }, trim: { start, end }, showWarnings: false });
-  if (!conversion.utilizedTracks.some(track => track.isVideoTrack())) throw new Error('the video track cannot be written to an MP4');
+  if (!conversion.utilizedTracks.some(track => track.isVideoTrack())) throw new Error(tr('the video track cannot be written to an MP4'));
   const [codec] = await mb.getEncodableAudioCodecs(['aac', 'opus'], { numberOfChannels: mix.numberOfChannels, sampleRate: mix.sampleRate });
-  if (!codec) throw new Error('this browser cannot encode the audio');
+  if (!codec) throw new Error(tr('this browser cannot encode the audio'));
   const audio = new mb.AudioBufferSource({ codec, bitrate: mb.QUALITY_HIGH });
   output.addAudioTrack(audio);
   conversion.onProgress = progress => { $('export-progress').value = progress; };
@@ -1521,28 +1523,28 @@ async function runExport() {
   const range = readExportRange(), kind = exportKind();
   if (range.error || exporting) return;
   const withVideoAudio = $('export-video-audio').checked;
-  if (kind === 'audio' && !withVideoAudio && !tracks.some(t => !t.muted && t.clips.some(c => !c.muted))) { status('No unmuted recordings to export.'); return; }
+  if (kind === 'audio' && !withVideoAudio && !tracks.some(t => !t.muted && t.clips.some(c => !c.muted))) { status(tr('No unmuted recordings to export.')); return; }
   const job = exporting = { canceled: false }, progress = $('export-progress'), name = exportFileName(kind);
   for (const element of $('export-dialog').querySelectorAll('input, .export-range button')) element.disabled = true;
   progress.hidden = false; progress.removeAttribute('value');
-  $('export-summary').textContent = withVideoAudio ? 'Reading the video audio…' : 'Mixing…';
+  $('export-summary').textContent = withVideoAudio ? tr('Reading the video audio…') : tr('Mixing…');
   $('export-ok').disabled = true;
   try {
     const rate = kind === 'video' ? 48000 : context?.sampleRate || 48000;
     const videoBuffer = withVideoAudio ? await decodeVideoAudio(rate) : null;
     if (job.canceled) return;
-    $('export-summary').textContent = 'Mixing…';
+    $('export-summary').textContent = tr('Mixing…');
     const mix = await renderMix(range.start, range.end, rate, kind === 'video' || videoBuffer?.numberOfChannels > 1 ? 2 : 1, videoBuffer);
     if (job.canceled) return;
-    if (kind === 'video') { $('export-summary').textContent = 'Writing the video…'; progress.value = 0; }
+    if (kind === 'video') { $('export-summary').textContent = tr('Writing the video…'); progress.value = 0; }
     const blob = kind === 'video' ? await muxVideo(mix, range, job) : wavBlob(mix);
     if (job.canceled) return;
     downloadBlob(blob, name);
-    status(`Exported ${name} (${formatTime(range.start)} – ${formatTime(range.end)}).`);
+    status(tr('Exported {file} ({start} – {end}).', { file: name, start: formatTime(range.start), end: formatTime(range.end) }));
     exporting = null; $('export-dialog').close();
-    placeMarkers(range.start, range.end, 'set export range');
+    placeMarkers(range.start, range.end, tr('set export range'));
   } catch (error) {
-    if (!job.canceled) status(`Export failed: ${error.message}`);
+    if (!job.canceled) status(tr('Export failed: {message}', { message: error.message }));
   } finally {
     if (exporting === job) exporting = null;
     for (const element of $('export-dialog').querySelectorAll('input')) element.disabled = false;
@@ -1559,20 +1561,20 @@ $('video-file').onchange = event => {
   selectedVideo = file;
   videoURL = URL.createObjectURL(file); video.src = videoURL;
   saveProject();
-  showVideoName(file.name); status('Video loaded. Press Play or Record.');
+  showVideoName(file.name); status(tr('Video loaded. Press Play or Record.'));
 };
 function showVideoName(name) {
-  $('video-name').textContent = name || 'Choose video';
+  $('video-name').textContent = name || tr('Choose video');
   $('video-picker').classList.toggle('primary', !name);
-  $('video-picker').title = name ? `${name}: click to choose another video` : 'Choose video';
+  $('video-picker').title = name ? tr('{file}: click to choose another video', { file: name }) : tr('Choose video');
   readVideoAudio(name ? selectedVideo : null);
 }
 showVideoName(null);
 function updateVideoMute() {
   const rowMute = $('video-audio-mute');
-  setIconButton(rowMute, video.muted ? 'mute' : 'volume', 'Mute', `${video.muted ? 'Unmute' : 'Mute'} video audio`);
+  setIconButton(rowMute, video.muted ? 'mute' : 'volume', tr('Mute'), video.muted ? tr('Unmute video audio') : tr('Mute video audio'));
   rowMute.setAttribute('aria-pressed', String(video.muted));
-  showVolumeHandle($('video-audio-volume'), videoGain, 'Video volume');
+  showVolumeHandle($('video-audio-volume'), videoGain, tr('Video volume'));
 }
 // Up to 0 dB the element's own volume is enough; boosting routes the video through a GainNode (permanent for this page).
 let videoGain = 1, videoGainNode = null;
@@ -1585,7 +1587,7 @@ function setVideoGain(gain) {
   if (videoGainNode) { videoGainNode.gain.value = gain; video.volume = 1; } else video.volume = gain;
   updateVideoMute();
 }
-$('video-audio-volume').onclick = () => openVolume($('video-audio-volume'), { title: 'Video audio', get: () => videoGain, set: setVideoGain, commit: () => saveProject() });
+$('video-audio-volume').onclick = () => openVolume($('video-audio-volume'), { title: tr('Video audio'), get: () => videoGain, set: setVideoGain, commit: () => saveProject() });
 $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
@@ -1608,7 +1610,7 @@ $('timeline-scroll').addEventListener('drop', event => {
   event.preventDefault();
   [...$('tracks').children].forEach(row => row.classList.remove('drop-target'));
   const index = dropRow(event), files = [...event.dataTransfer.files].filter(file => file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|ogg|oga|opus|flac|webm|aif|aiff)$/i.test(file.name));
-  if (index < 0 || !files.length) { status('Could not import: drop audio files on a track.'); return; }
+  if (index < 0 || !files.length) { status(tr('Could not import: drop audio files on a track.')); return; }
   importAudio(files, tracks[index], (event.clientX - $('timeline').getBoundingClientRect().left) / pxPerSecond);
 });
 $('undo').onclick = undo;
@@ -1622,7 +1624,7 @@ $('open-project-button').onclick = async () => {
   try {
     const [handle] = await window.showOpenFilePicker({ types: PROJECT_TYPES });
     await openProject(await handle.getFile(), handle);
-  } catch (error) { if (error.name !== 'AbortError') status(`Could not open project: ${error.message}`); }
+  } catch (error) { if (error.name !== 'AbortError') status(tr('Could not open project: {message}', { message: error.message })); }
 };
 $('open-project').onchange = async event => {
   const file = event.target.files[0];
@@ -1648,6 +1650,10 @@ for (const tip of document.querySelectorAll('#project-menu')) tip.addEventListen
   if (event.newState === 'open') anchorPopover(tip, button);
 });
 $('open-settings').onclick = () => $('device-dialog').showModal();
+// Language choice, shown once at least one translation is installed; changing it reloads the page in that language.
+$('language-field').hidden = I18N.languages().length < 2;
+$('language').replaceChildren(...I18N.languages().map(([code, name]) => new Option(name, code, false, code === I18N.language)));
+$('language').onchange = event => I18N.setLanguage(event.target.value);
 $('input-meter').onclick = () => { if (!recording) $('test-mic').click(); };
 $('monitor').onclick = toggleMonitor;
 $('enhanced-audio').onclick = toggleEnhancedAudio;
@@ -1660,9 +1666,9 @@ $('input-device').onchange = () => { if (!recording && stream) stopMonitoring();
 $('test-mic').onclick = async () => {
   if (recording) return;
   if (stream) { stopMonitoring(); return; }
-  if (!navigator.mediaDevices?.getUserMedia) { status('Microphone only available on localhost or HTTPS.'); return; }
+  if (!navigator.mediaDevices?.getUserMedia) { status(tr('Microphone only available on localhost or HTTPS.')); return; }
   $('test-mic').disabled = true;
-  try { await startMonitoring(); } catch (error) { stopMonitoring(); status(`Microphone unavailable: ${error.message}`); }
+  try { await startMonitoring(); } catch (error) { stopMonitoring(); status(tr('Microphone unavailable: {message}', { message: error.message })); }
   finally { $('test-mic').disabled = false; }
 };
 document.addEventListener('pointerup', event => {
@@ -1680,7 +1686,7 @@ document.addEventListener('keydown', async event => {
   if (key === 'w' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
     event.preventDefault();
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('.video-frame').requestFullscreen(); }
-    catch (error) { status(`Could not toggle full screen: ${error.message}`); }
+    catch (error) { status(tr('Could not toggle full screen: {message}', { message: error.message })); }
     return;
   }
   if ((key === 'i' || key === 'o') && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
@@ -1745,7 +1751,7 @@ $('ruler').addEventListener('pointerdown', event => {
     ruler.classList.remove('scrubbing');
     scrubbing = false;
     if (wasPlaying) {
-      try { await play(); } catch (error) { status(`Playback not started: ${error.message}`); }
+      try { await play(); } catch (error) { status(tr('Playback not started: {message}', { message: error.message })); }
     }
   };
   ruler.addEventListener('pointermove', move); ruler.addEventListener('pointerup', done); ruler.addEventListener('pointercancel', done);

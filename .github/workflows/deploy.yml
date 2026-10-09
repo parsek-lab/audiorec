@@ -18,14 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Collect site files
-        run: mkdir -p dist/app && cp index.html dist/ && cp app/index.html app/style.css app/app.js dist/app/
-      # Browsers cache app.js and style.css for hours; a content hash in their URLs makes every release load the new files.
+        run: mkdir -p dist && cp index.html dist/ && cp -r app dist/app
+      # Browsers cache scripts and styles for hours; a content hash in each local asset URL makes every release load the
+      # new files. Every src/href in app/index.html that names a local .js or .css file is versioned.
       - name: Version asset URLs
         run: |
-          for file in style.css app.js; do
+          files=$(grep -oE '(src|href)="[^":?]+\.(js|css)"' app/index.html | sed -E 's/^(src|href)="//; s/"$//')
+          [ -n "$files" ] || { echo "no local assets found in app/index.html"; exit 1; }
+          for file in $files; do
+            [ -f "app/$file" ] || { echo "app/$file is referenced but missing"; exit 1; }
             hash=$(sha256sum "app/$file" | cut -c1-12)
             sed -i "s|\"$file\"|\"$file?v=$hash\"|" dist/app/index.html
-            grep -q "\"$file?v=$hash\"" dist/app/index.html || { echo "$file reference not found in app/index.html"; exit 1; }
+            grep -q "\"$file?v=$hash\"" dist/app/index.html || { echo "$file reference not versioned"; exit 1; }
           done
       - uses: cloudflare/wrangler-action@v3
         with:

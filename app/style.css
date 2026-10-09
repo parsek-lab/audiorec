@@ -298,6 +298,7 @@ dialog.tip{width:min(92vw,680px)}
 .tip-body p{color:var(--subtle)}.tip-body strong{color:var(--text);font-weight:600}
 .tip code{font:500 .85rem var(--mono);color:var(--accent-2)}
 .devices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.devices label[hidden]{display:none}
 .devices label{display:grid;gap:7px;color:var(--subtle);font-size:.82rem;font-weight:500}
 .devices select{width:100%;min-width:0;padding:10px 12px;background:#0d1019}
 .mic-monitor{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line)}

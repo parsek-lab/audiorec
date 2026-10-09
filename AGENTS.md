@@ -4,7 +4,7 @@ Guidance for coding agents working on Audiorec. User-facing docs are in `README.
 
 ## Project shape
 
-- Static web app in `app/`: `index.html`, `style.css`, `app.js` (served at `/app/`). The root `index.html` is the self-contained landing page. No build, no bundler, no npm dependencies, no framework.
+- Static web app in `app/`: `index.html`, `style.css`, `app.js`, `i18n.js` and `locales/` (served at `/app/`). The root `index.html` is the self-contained landing page. No build, no bundler, no npm dependencies, no framework.
 - Keep it that way: do not add a package manager, transpiler or library unless the user asks.
 - Not a git repository. There is no `git diff` to review changes against.
 - UI text, code and comments are in **English**, even though the user usually writes requests in Italian.

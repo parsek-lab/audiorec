@@ -56,6 +56,19 @@ Recording stops automatically when the video is paused, seeked or ends. Recorded
 | `app/index.html` | Markup, inline SVG icon library, info popovers, device dialog |
 | `app/style.css` | Dark theme, design tokens on `:root` |
 | `app/app.js` | All logic: recording, timeline, playback, persistence, export |
+| `app/i18n.js` | Interface translation: language choice, `tr()` / `trn()`, page translation |
+| `app/locales/<code>.js` | One file per translated language (none yet) |
+| `tools/i18n.mjs` | Translation helper: creates, updates and checks the locale files (Node, no dependencies) |
+
+## Translations
+
+The interface is written in English, and the English text is the translation key. A language is a file in `app/locales/`, loaded by a `<script>` tag in `app/index.html` before `app.js`. The language follows the browser, and once a translation exists the device settings show a **Language** selector (the choice is kept in this browser).
+
+1. `node tools/i18n.mjs new it Italiano` creates `app/locales/it.js` with every string and adds its script tag.
+2. Fill in the values. An empty value shows the English text. Keep `{placeholders}` as they are and keep a trailing shortcut such as `(Ctrl+Z)` at the end, where the tooltip shows it as a key. Plural entries take the [`Intl.PluralRules`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/PluralRules) forms of the language (`one`, `few`, `many`, `other`…). The second object holds the paragraphs with formatting (`data-i18n-html` in `app/index.html`) as HTML.
+3. `node tools/i18n.mjs` lists, for each language, the strings still missing or no longer used; `node tools/i18n.mjs update it` adds the new ones and drops the unused ones, keeping the existing translations.
+
+In code, visible text goes through `tr('Text with {name}.', { name })`, or `trn('{count} clip', '{count} clips', count)` for plurals. Text in `app/index.html` (text, `title`, `aria-label`, `placeholder`) is translated in place; give an element `data-i18n-html="<id>"` when its content has inline markup, and `translate="no"` when it must not be translated.
 
 ## `.audiorec` format
 
