@@ -705,7 +705,7 @@ function cutClips() {
   for (const { clip, track } of cuts) {
     const data = channel(clip.buffer), rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
     const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0 };
-    const right = { ...clip, name: nextClipName(track), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
+    const right = { ...clip, name: nextNameLike(clip.name || 'Clip'), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
     track.clips.splice(track.clips.indexOf(clip), 1, left, right);
     selectedClips.delete(clip); pieces.push(left, right);
   }
@@ -1152,6 +1152,13 @@ async function startMonitoring() {
     updateMicButton();
     await listDevices();
   } catch (error) { mic.getTracks().forEach(t => t.stop()); throw error; }
+}
+// Name for a piece cut from a clip: the source name with the next free progressive number ("Intro" -> "Intro 2",
+// "Voce 3" -> the next free "Voce N").
+function nextNameLike(name) {
+  const base = name.replace(/\s+\d+$/, '') || name;
+  const used = tracks.flatMap(t => t.clips).map(({ name: other = '' }) => other === base ? 1 : other.startsWith(`${base} `) && /^\d+$/.test(other.slice(base.length + 1)) ? Number(other.slice(base.length + 1)) : 0);
+  return `${base} ${Math.max(1, ...used) + 1}`;
 }
 function nextClipName(track) {
   const prefix = `${track.name} `;
