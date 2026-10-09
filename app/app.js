@@ -529,6 +529,8 @@ function ask(title, message, action, danger = true) {
   dialog.returnValue = ''; dialog.showModal(); (danger ? $('confirm-cancel') : ok).focus();
   return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok'), { once: true }));
 }
+// The rename in progress; a clip rename ends (and saves) when that clip is deselected.
+let activeEdit = null;
 function editName(element, value, commit) {
   if (element.isContentEditable) return;
   try { element.contentEditable = 'plaintext-only'; } catch { element.contentEditable = 'true'; }
@@ -536,7 +538,7 @@ function editName(element, value, commit) {
   getSelection().selectAllChildren(element);
   const off = new AbortController();
   const finish = save => {
-    off.abort();
+    off.abort(); if (activeEdit?.element === element) activeEdit = null;
     const name = element.textContent.replace(/\s+/g, ' ').trim();
     element.removeAttribute('contenteditable'); element.classList.remove('editing'); element.scrollLeft = 0;
     if (save && name && name !== value) commit(name); else element.textContent = value;
@@ -547,6 +549,7 @@ function editName(element, value, commit) {
   }, { signal: off.signal });
   element.addEventListener('blur', () => finish(true), { signal: off.signal });
   element.addEventListener('pointerdown', e => e.stopPropagation(), { signal: off.signal });
+  return activeEdit = { element, finish };
 }
 const undoStack = [], redoStack = [], selectedClips = new Set(), clipElements = new Map();
 const snapshot = () => ({ nextId, length: timelineLength, markers: [exportIn, exportOut], tracks: tracks.map(({ pending, ...t }) => ({ ...t, clips: t.clips.map(c => ({ ...c })) })) });
@@ -574,6 +577,16 @@ function updateSelection() {
   for (const [clip, element] of clipElements) element.classList.toggle('selected', selectedClips.has(clip));
   for (const item of $('clip-items').children) item.classList.toggle('selected', selectedClips.has(item.clip));
   updateClipActions();
+  if (activeEdit?.clip && !selectedClips.has(activeEdit.clip)) activeEdit.finish(true);
+}
+const clipTitle = clip => `${clip.name || 'Clip'} · ${clip.start.toFixed(2)} s · ${clipDuration(clip).toFixed(2)} s · Select (click, Shift+click to add) · Rename (double-click)`;
+// Updates only the clip's label, tooltip and the list, without rebuilding the timeline: a rename can end in the middle of
+// a press on another clip (it ends when its clip is deselected), and rebuilding would drop that press.
+function renameClip(clip, name) {
+  remember('rename clip'); clip.name = name;
+  const block = clipElements.get(clip);
+  if (block) { block.title = clipTitle(clip); const label = block.querySelector('.clip-label'); if (label) label.textContent = name; }
+  renderClipList(); saveProject(); status(`Clip renamed: ${name}.`);
 }
 function renderClipList() {
   const clips = tracks.flatMap(track => track.clips.map(clip => ({ clip, track }))).sort((a, b) => a.clip.start - b.clip.start || tracks.indexOf(a.track) - tracks.indexOf(b.track));
@@ -592,7 +605,7 @@ function renderClipList() {
     download.ondblclick = event => event.stopPropagation();
     item.append(name, time, download, meta);
     item.onclick = event => { if (name.isContentEditable) return; selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
-    item.ondblclick = () => editName(name, clip.name || 'Clip', value => { remember('rename clip'); clip.name = value; renderTracks(); saveProject(); status(`Clip renamed: ${value}.`); });
+    item.ondblclick = () => { const edit = editName(name, clip.name || 'Clip', value => renameClip(clip, value)); if (edit) edit.clip = clip; };
     return item;
   }));
 }
@@ -919,7 +932,7 @@ function renderTracks() {
       clipElements.set(clip, block);
       block.style.left = `${clip.start * pxPerSecond}px`;
       block.style.width = `${Math.max(8, clipDuration(clip) * pxPerSecond)}px`;
-      block.title = `${clip.name || 'Clip'} · ${clip.start.toFixed(2)} s · ${clipDuration(clip).toFixed(2)} s · Select (click, Shift+click to add) · Rename (double-click)`;
+      block.title = clipTitle(clip);
       const wave = drawWaveform(clip);
       if (wave) block.append(wave);
       const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = clip.name || 'Clip'; block.append(label);
@@ -933,7 +946,8 @@ function renderTracks() {
       block.addEventListener('dblclick', e => {
         if (e.target !== block) return;
         e.stopPropagation();
-        editName(label, clip.name || 'Clip', name => { remember('rename clip'); clip.name = name; renderTracks(); saveProject(); status(`Clip renamed: ${name}.`); });
+        const edit = editName(label, clip.name || 'Clip', name => renameClip(clip, name));
+        if (edit) edit.clip = clip;
       });
       lane.append(block);
     }
