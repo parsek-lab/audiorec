@@ -569,7 +569,7 @@ function updateSelection() {
 }
 function renderClipList() {
   const clips = tracks.flatMap(track => track.clips.map(clip => ({ clip, track }))).sort((a, b) => a.clip.start - b.clip.start || tracks.indexOf(a.track) - tracks.indexOf(b.track));
-  $('clip-count').textContent = clips.length; $('clip-empty').hidden = clips.length > 0;
+  $('clip-count').textContent = clips.length; $('clip-empty').hidden = clips.length > 0; $('clip-zip').disabled = !clips.length;
   $('clip-items').replaceChildren(...clips.map(({ clip, track }) => {
     const item = document.createElement('li'); item.clip = clip;
     item.className = `clip-item${track.muted ? ' muted-clip' : ''}${selectedClips.has(clip) ? ' selected' : ''}`;
@@ -578,7 +578,11 @@ function renderClipList() {
     const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || 'Clip';
     const time = document.createElement('span'); time.className = 'clip-item-time'; time.textContent = formatTime(clip.start);
     const meta = document.createElement('span'); meta.className = 'clip-item-meta'; meta.textContent = `${track.name} · ${clipDuration(clip).toFixed(1)} s`;
-    item.append(name, time, meta);
+    const download = document.createElement('button'); download.type = 'button'; download.className = 'clip-download ghost';
+    download.innerHTML = icon('download'); download.title = `Download ${clip.name || 'Clip'} as WAV`;
+    download.onclick = event => { event.stopPropagation(); downloadBlob(new Blob([clipWav(clip)], { type: 'audio/wav' }), `${safeFileName(clip.name || 'Clip')}.wav`); };
+    download.ondblclick = event => event.stopPropagation();
+    item.append(name, time, download, meta);
     item.onclick = event => { if (name.isContentEditable) return; selectClip(clip, event.shiftKey); if (!event.shiftKey && !recording) seekTo(clip.start); };
     item.ondblclick = () => editName(name, clip.name || 'Clip', value => { remember('rename clip'); clip.name = value; renderTracks(); saveProject(); status(`Clip renamed: ${value}.`); });
     return item;
@@ -1344,10 +1348,10 @@ function renderMix(start, end, rate, channels, videoBuffer) {
   }
   return offline.startRendering();
 }
-function wavBlob(buffer) {
-  const channels = buffer.numberOfChannels, length = buffer.length, rate = buffer.sampleRate, size = length * channels * 2;
+const wavBlob = buffer => new Blob([wavBytes(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)), buffer.sampleRate)], { type: 'audio/wav' });
+function wavBytes(data, rate) {
+  const channels = data.length, length = data[0].length, size = length * channels * 2;
   if (size + 44 > 0xffffffff) throw new Error('the range is too long for a single WAV');
-  const data = Array.from({ length: channels }, (_, c) => buffer.getChannelData(c));
   const bytes = new ArrayBuffer(44 + size), view = new DataView(bytes);
   const text = (at, value) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
   text(0, 'RIFF'); view.setUint32(4, 36 + size, true); text(8, 'WAVE'); text(12, 'fmt ');
@@ -1355,8 +1359,66 @@ function wavBlob(buffer) {
   view.setUint32(24, rate, true); view.setUint32(28, rate * channels * 2, true); view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true);
   text(36, 'data'); view.setUint32(40, size, true);
   for (let i = 0, at = 44; i < length; i++) for (let c = 0; c < channels; c++, at += 2) { const sample = Math.max(-1, Math.min(1, data[c][i])); view.setInt16(at, sample < 0 ? sample * 32768 : sample * 32767, true); }
-  return new Blob([bytes], { type: 'audio/wav' });
+  return new Uint8Array(bytes);
 }
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'Clip';
+// One clip as it plays: trimmed, with the playback fades, without the track volume.
+function clipWav(clip) {
+  const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
+  const samples = data.slice(from, Math.min(data.length, from + Math.round(clipDuration(clip) * rate)));
+  const fade = Math.min(Math.round(FADE_SECONDS * rate), (samples.length - 1) / 2);
+  for (let i = 0; i < samples.length && fade > 0; i++) samples[i] *= Math.min(1, i / fade, (samples.length - 1 - i) / fade);
+  return wavBytes([samples], rate);
+}
+// Minimal ZIP writer (stored, no compression: WAV barely compresses) for downloading every clip at once.
+const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
+function crc32(bytes) { let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zipBlob(files) {
+  const now = new Date(), time = now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1, date = (now.getFullYear() - 1980) << 9 | (now.getMonth() + 1) << 5 | now.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const { name, data } of files) {
+    const nameBytes = new TextEncoder().encode(name), crc = crc32(data);
+    const header = (size, fields) => { const view = new DataView(new ArrayBuffer(size)); for (const [at, bits, value] of fields) view[`setUint${bits}`](at, value, true); return view; };
+    const common = [[10, 16, time], [12, 16, date], [14, 32, crc], [18, 32, data.length], [22, 32, data.length], [26, 16, nameBytes.length]];
+    parts.push(header(30, [[0, 32, 0x04034b50], [4, 16, 20], [6, 16, 0x800], ...common]), nameBytes, data);
+    central.push(header(46, [[0, 32, 0x02014b50], [4, 16, 20], [6, 16, 20], [8, 16, 0x800], ...common.map(([at, bits, value]) => [at + 2, bits, value]), [42, 32, offset]]), nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+    if (offset > 0xffffffff) throw new Error('the clips are too large for one ZIP');
+  }
+  const size = central.reduce((total, part) => total + part.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+function downloadAllClips() {
+  const clips = [...$('clip-items').children].map(item => item.clip), used = new Set();
+  if (!clips.length) return;
+  try {
+    const files = clips.map(clip => {
+      const base = safeFileName(clip.name || 'Clip');
+      let name = `${base}.wav`;
+      for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n}).wav`;
+      used.add(name.toLowerCase());
+      return { name, data: clipWav(clip) };
+    });
+    const zipName = `${exportBaseName()}-clips.zip`;
+    downloadBlob(zipBlob(files), zipName); status(`${files.length} clip${files.length === 1 ? '' : 's'} downloaded as ${zipName}.`);
+  } catch (error) { status(`Download failed: ${error.message}`); }
+}
+$('clip-zip').onclick = downloadAllClips;
+function showClipList(open) {
+  $('clip-list').classList.toggle('collapsed', !open);
+  $('clip-list-toggle').setAttribute('aria-expanded', String(open));
+  $('clip-list-toggle').title = open ? 'Hide the clip list' : 'Show the clip list';
+  try { localStorage.setItem('audiorec-clip-list', open ? 'shown' : 'hidden'); } catch {}
+}
+$('clip-list-toggle').onclick = () => showClipList($('clip-list').classList.contains('collapsed'));
+try { if (localStorage.getItem('audiorec-clip-list') === 'hidden') showClipList(false); } catch {}
 async function muxVideo(mix, { start, end }, job) {
   const mb = await import(MEDIABUNNY);
   const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.BlobSource(selectedVideo) });
@@ -1394,9 +1456,7 @@ async function runExport() {
     if (kind === 'video') { $('export-summary').textContent = 'Writing the video…'; progress.value = 0; }
     const blob = kind === 'video' ? await muxVideo(mix, range, job) : wavBlob(mix);
     if (job.canceled) return;
-    const url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = name; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    downloadBlob(blob, name);
     status(`Exported ${name} (${formatTime(range.start)} – ${formatTime(range.end)}).`);
     exporting = null; $('export-dialog').close();
     placeMarkers(range.start, range.end, 'set export range');

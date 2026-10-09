@@ -73,18 +73,28 @@ button:disabled,select:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .video-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .video-panel{padding:0;overflow:hidden;background:#030409;flex-direction:row}
 .clip-list{width:280px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-solid);border-right:1px solid var(--line-strong)}
-.clip-list-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--line)}
+.clip-list-heading{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 6px;border-bottom:1px solid var(--line)}
+.clip-list-heading h2{flex:1;min-width:0}
+.clip-tool{width:30px;height:30px;padding:0;border-radius:8px;flex:none}.clip-tool .icon{width:17px;height:17px}
+.clip-list{transition:width .18s ease}
+.clip-list.collapsed{width:46px}
+.clip-list.collapsed .clip-list-heading{padding:8px;border-bottom:0}
+.clip-list.collapsed :is(h2,.clip-count,#clip-zip,.clip-items,.clip-empty){display:none}
+.clip-list.collapsed #clip-list-toggle{color:var(--accent)}
 .clip-list-heading h2{font-size:.9rem}
 .clip-count{font:500 .72rem var(--mono);color:var(--subtle);padding:2px 8px;border-radius:999px;background:var(--well,#0b0e16);border:1px solid var(--line)}
 .clip-items{list-style:none;margin:0;padding:6px;overflow:auto;flex:1;min-height:0;display:grid;align-content:start;gap:2px;scrollbar-color:#3a4460 transparent;scrollbar-width:thin}
 .clip-items:empty{display:none}
-.clip-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 10px;padding:7px 10px 7px 14px;border-radius:8px;cursor:pointer;box-shadow:inset 3px 0 0 var(--track-color);user-select:none;transition:background .12s}
+.clip-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:1px 8px;padding:7px 6px 7px 14px;border-radius:8px;cursor:pointer;box-shadow:inset 3px 0 0 var(--track-color);user-select:none;transition:background .12s}
 .clip-item:hover{background:var(--raised)}
 .clip-item.selected{background:rgba(79,209,255,.12);box-shadow:inset 3px 0 0 var(--track-color),inset 0 0 0 1px rgba(79,209,255,.55)}
 .clip-item.muted-clip{opacity:.5}
 .clip-item-name{font-size:.84rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip-item-time{font:500 .74rem var(--mono);color:var(--accent-2);align-self:center;font-variant-numeric:tabular-nums}
-.clip-item-meta{grid-column:1/-1;font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-item-meta{grid-column:1/3;font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-download{grid-column:3;grid-row:1/3;align-self:center;width:28px;height:28px;padding:0;border-radius:7px;color:var(--muted)}.clip-download .icon{width:15px;height:15px}
+.clip-item:hover .clip-download,.clip-download:focus-visible{color:var(--text)}
+.clip-download:hover{color:var(--accent-2)}
 .clip-empty{padding:14px;font-size:.8rem;color:var(--muted)}
 .clip-empty[hidden]{display:none}
 .file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:40ch;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
@@ -116,8 +126,8 @@ body.is-recording .video-panel{border-color:rgba(255,77,109,.55);box-shadow:0 0 
 .track-headers{overflow:hidden;background:var(--surface-solid);border-right:1px solid var(--line-strong);min-width:0}
 .ruler-spacer{position:sticky;top:0;z-index:2;background:var(--surface-solid);height:var(--ruler);border-bottom:1px solid var(--line-strong)}
 .track-tools{display:flex;align-items:center;gap:4px;padding:0 6px 0 8px}
-.tool-button{gap:5px;padding:4px 8px;border-radius:8px;font-size:.76rem;font-weight:600;background:rgba(255,255,255,.04);border-color:var(--line)}
-.tool-button .icon{width:14px;height:14px;color:var(--accent)}
+.tool-button{width:28px;height:28px;padding:0;border-radius:8px;background:rgba(255,255,255,.04);border-color:var(--line)}
+.tool-button .icon{width:16px;height:16px;color:var(--accent)}
 .track-tools-end{display:flex;align-items:center;gap:2px;margin-left:auto}
 .tool-icon{width:26px;height:26px;padding:0;border-radius:8px}.tool-icon .icon{width:16px;height:16px}
 .track-tools .info-button{width:26px;height:26px}
