@@ -7,6 +7,7 @@ function setIconButton(button, name, text, tooltip) {
   button.title = tooltip;
 }
 function updateRecordButton() {
+  updateClipActions();
   setIconButton($('record'), recording ? 'stop' : 'record', recording ? 'Stop recording' : 'Record', `${recording ? 'Stop recording' : 'Record'} (*)`);
   $('record').classList.toggle('active', recording);
   document.body.classList.toggle('is-recording', recording);
@@ -74,6 +75,7 @@ function seekTo(seconds) {
   updatePlayhead();
 }
 function updatePlayhead(scroll = 'smooth') {
+  updateClipActions();
   const scroller = $('timeline-scroll'), time = Math.max(0, playPosition());
   const position = time * pxPerSecond;
   $('playhead').style.left = `${position}px`;
@@ -566,6 +568,7 @@ const undo = () => travel(undoStack, redoStack, 'Undo'), redo = () => travel(red
 function updateSelection() {
   for (const [clip, element] of clipElements) element.classList.toggle('selected', selectedClips.has(clip));
   for (const item of $('clip-items').children) item.classList.toggle('selected', selectedClips.has(item.clip));
+  updateClipActions();
 }
 function renderClipList() {
   const clips = tracks.flatMap(track => track.clips.map(clip => ({ clip, track }))).sort((a, b) => a.clip.start - b.clip.start || tracks.indexOf(a.track) - tracks.indexOf(b.track));
@@ -651,6 +654,36 @@ async function importAudio(files, track = tracks.find(t => t.armed) ?? tracks[0]
   const imported = clips.length ? `${clips.length === 1 ? clips[0].name : `${clips.length} clips`} imported on ${track.name}.` : '';
   status(failed.length ? `Could not import ${failed.join(', ')}: unsupported audio. ${imported}`.trim() : imported);
 }
+// Clip editing buttons: cut the selected clips under the playhead in two, delete the selected clips.
+const CUT_MARGIN = .01;
+const clipsToCut = () => {
+  const time = playPosition();
+  return tracks.flatMap(track => track.clips.filter(clip => selectedClips.has(clip) && time > clip.start + CUT_MARGIN && time < clip.start + clipDuration(clip) - CUT_MARGIN).map(clip => ({ clip, track })));
+};
+function updateClipActions() {
+  $('cut-clip').disabled = recording || !clipsToCut().length;
+  $('delete-clips').disabled = recording || !selectedClips.size;
+}
+// Each half gets its own buffer with only its samples, so the project does not store the audio twice.
+function cutClips() {
+  const cuts = clipsToCut();
+  if (recording || !cuts.length) return;
+  remember(cuts.length === 1 ? 'cut clip' : `cut ${cuts.length} clips`);
+  const time = playPosition(), audio = getContext(), pieces = [];
+  const slice = (data, rate, from, to) => { const buffer = audio.createBuffer(1, to - from, rate); buffer.copyToChannel(data.subarray(from, to), 0); return buffer; };
+  for (const { clip, track } of cuts) {
+    const data = channel(clip.buffer), rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
+    const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0 };
+    const right = { ...clip, name: nextClipName(track), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
+    track.clips.splice(track.clips.indexOf(clip), 1, left, right);
+    selectedClips.delete(clip); pieces.push(left, right);
+  }
+  for (const piece of pieces) selectedClips.add(piece);
+  renderTracks(); syncPlayback(); saveProject();
+  status(cuts.length === 1 ? `Clip cut at ${formatTime(time)}.` : `${cuts.length} clips cut at ${formatTime(time)}.`);
+}
+$('cut-clip').onclick = cutClips;
+$('delete-clips').onclick = () => deleteSelectedClips();
 function deleteSelectedClips() {
   const count = tracks.reduce((sum, t) => sum + t.clips.filter(c => selectedClips.has(c)).length, 0);
   if (recording || !count) return;
@@ -1608,6 +1641,7 @@ document.addEventListener('keydown', async event => {
   if ((key === 'i' || key === 'o') && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
     event.preventDefault(); markAtPlayhead(key === 'i' ? 'in' : 'out'); return;
   }
+  if (key === 's' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
   const zoom = { '+': 1, '=': 1, '-': -1, '_': -1 }[event.key];
   if (zoom !== undefined && !event.altKey && !event.ctrlKey && !event.metaKey && !document.querySelector('dialog[open]') && !(event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable]'))) {
