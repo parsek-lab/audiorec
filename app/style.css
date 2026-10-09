@@ -60,6 +60,7 @@ button:disabled,select:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .clip-action:hover:not(:disabled){background:var(--raised);color:var(--text)}
 .danger-action:hover:not(:disabled){color:var(--rec,#ff4d6d)}
 .clip-action:disabled{opacity:.35}
+.clip-action[aria-pressed=true]{color:var(--warn);background:rgba(255,200,87,.12)}
 .input-meter{gap:8px;padding:7px 10px;color:var(--muted);background:#0b0e16;border-color:var(--line)}
 .input-meter[aria-pressed=true]{color:var(--ok)}
 .input-meter .icon{width:15px;height:15px}
