@@ -35,6 +35,7 @@ const STANDARD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 100, 119.88,
 let fps = 25;
 let pxPerSecond = 80;
 let playheadFrame = null, scrubbing = false;
+let viewReady = false, viewTimer = null; // timeline view persistence, see restoreView
 let cursor = null, overPlaying = false, overFrom = 0, overStart = 0;
 const videoLength = () => video.src && Number.isFinite(video.duration) ? video.duration : 0;
 const clipsEnd = () => Math.max(0, ...tracks.flatMap(t => t.clips.map(c => c.start + clipDuration(c))));
@@ -75,6 +76,7 @@ function seekTo(seconds) {
   updatePlayhead();
 }
 function updatePlayhead(scroll = 'smooth') {
+  saveView();
   updateClipActions();
   const scroller = $('timeline-scroll'), time = Math.max(0, playPosition());
   const position = time * pxPerSecond;
@@ -576,7 +578,7 @@ const undo = () => travel(undoStack, redoStack, 'Undo'), redo = () => travel(red
 function updateSelection() {
   for (const [clip, element] of clipElements) element.classList.toggle('selected', selectedClips.has(clip));
   for (const item of $('clip-items').children) item.classList.toggle('selected', selectedClips.has(item.clip));
-  updateClipActions();
+  updateClipActions(); saveView();
   if (activeEdit?.clip && !selectedClips.has(activeEdit.clip)) activeEdit.finish(true);
 }
 const clipTitle = clip => `${clip.name || 'Clip'} · ${clip.start.toFixed(2)} s · ${clipDuration(clip).toFixed(2)} s · Select (click, Shift+click to add) · Rename (double-click)`;
@@ -1685,7 +1687,7 @@ document.addEventListener('keydown', async event => {
     event.preventDefault(); markAtPlayhead(key === 'i' ? 'in' : 'out'); return;
   }
   if (key === 'm' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); toggleClipMute(); return; }
-  if (key === 's' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
+  if (key === 'c' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
   const zoom = { '+': 1, '=': 1, '-': -1, '_': -1 }[event.key];
   if (zoom !== undefined && !event.altKey && !event.ctrlKey && !event.metaKey && !document.querySelector('dialog[open]') && !(event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable]'))) {
@@ -1796,7 +1798,7 @@ video.addEventListener('loadedmetadata', () => { rescale(); detectFps(); });
 let ticksFrame = null;
 $('track-headers').addEventListener('wheel', event => { if (event.ctrlKey || event.metaKey) return; event.preventDefault(); $('timeline-scroll').scrollTop += event.deltaY; }, { passive: false });
 $('timeline-scroll').addEventListener('scroll', () => {
-  $('track-headers').scrollTop = $('timeline-scroll').scrollTop; ticksFrame ??= requestAnimationFrame(() => { ticksFrame = null; renderTicks(); drawVideoWave(); }); });
+  saveView(); $('track-headers').scrollTop = $('timeline-scroll').scrollTop; ticksFrame ??= requestAnimationFrame(() => { ticksFrame = null; renderTicks(); drawVideoWave(); }); });
 video.addEventListener('play', async () => { overPlaying = false; cursor = null; if (context) await context.resume(); syncPlayback(); if (playheadFrame === null) animatePlayhead(); });
 video.addEventListener('pause', () => { if (video.ended && timelineEnd() > video.duration + .01) return; if (recording) finishRecording(); stopPlayback(); stopPlayhead(); });
 video.addEventListener('seeking', () => { if (cursor !== null && video.currentTime < video.duration - .01) cursor = null; if (recording) finishRecording(); stopPlayback(); });
@@ -1869,4 +1871,31 @@ document.addEventListener('focusin', event => { const target = event.target.clos
 document.addEventListener('focusout', hideTooltip);
 for (const type of ['pointerdown', 'keydown', 'wheel']) document.addEventListener(type, hideTooltip, true);
 document.addEventListener('scroll', hideTooltip, true);
-restoreProject(); listDevices();
+// View state kept across reloads in this browser: selected clips, zoom, horizontal scroll and playhead position.
+// Saving starts only once the saved view has been applied, so the startup render does not overwrite it.
+function writeView() {
+  clearTimeout(viewTimer); viewTimer = null;
+  if (!viewReady) return;
+  const selection = tracks.flatMap((track, t) => track.clips.flatMap((clip, c) => selectedClips.has(clip) ? [[t, c]] : []));
+  try { localStorage.setItem('audiorec-view', JSON.stringify({ zoom: +$('zoom').value, scroll: $('timeline-scroll').scrollLeft, time: playPosition(), selection })); } catch {}
+}
+function saveView() { if (viewReady && viewTimer === null) viewTimer = setTimeout(writeView, 300); }
+window.addEventListener('pagehide', writeView);
+async function restoreView() {
+  let view = null;
+  try { view = JSON.parse(localStorage.getItem('audiorec-view')); } catch {}
+  if (view && typeof view === 'object') {
+    const settle = (events, ms) => new Promise(resolve => { for (const type of events) video.addEventListener(type, resolve, { once: true }); setTimeout(resolve, ms); });
+    if (selectedVideo && video.readyState < 1) await settle(['loadedmetadata', 'error'], 4000);
+    if (Number.isFinite(view.zoom)) { $('zoom').value = view.zoom; rescale(); }
+    for (const [t, c] of Array.isArray(view.selection) ? view.selection : []) { const clip = tracks[t]?.clips[c]; if (clip) selectedClips.add(clip); }
+    updateSelection();
+    const first = tracks.flatMap(t => t.clips).find(clip => selectedClips.has(clip));
+    if (first) revealClipItem(first);
+    if (Number.isFinite(view.time) && view.time > 0) { const seeked = videoLength() ? settle(['seeked'], 1500) : null; seekTo(view.time); await seeked; }
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    if (Number.isFinite(view.scroll)) { stopTimelineScroll(); $('timeline-scroll').scrollLeft = view.scroll; }
+  }
+  viewReady = true;
+}
+restoreProject().then(restoreView); listDevices();
