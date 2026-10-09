@@ -1597,7 +1597,13 @@ function anchorPopover(tip, button) {
   tip.style.left = `${left}px`;
   tip.style.top = `${below + tip.offsetHeight > window.innerHeight - 12 && above > 12 ? above : below}px`;
 }
-for (const tip of document.querySelectorAll('.tip, #project-menu')) tip.addEventListener('toggle', event => {
+// Info boxes are modal dialogs: open from their (i) button, close with the X, Esc or a click outside.
+for (const button of document.querySelectorAll('[data-tip]')) button.onclick = () => $(button.dataset.tip).showModal();
+for (const tip of document.querySelectorAll('dialog.tip')) {
+  tip.querySelector('.tip-close').onclick = () => tip.close();
+  tip.addEventListener('click', event => { const box = tip.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) tip.close(); });
+}
+for (const tip of document.querySelectorAll('#project-menu')) tip.addEventListener('toggle', event => {
   const button = document.querySelector(`[popovertarget="${tip.id}"]`);
   button.classList.toggle('open', event.newState === 'open');
   if (event.newState === 'open') anchorPopover(tip, button);
