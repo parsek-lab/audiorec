@@ -1448,7 +1448,7 @@ $('video-audio-volume').onclick = () => openVolume($('video-audio-volume'), { ti
 $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
-for (const id of ['project-menu', 'tracks-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
+for (const id of ['project-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
 $('name-cancel').onclick = () => $('name-dialog').close('cancel');
 $('add-track').onclick = addTrack;
 $('import-audio').onclick = () => $('import-file').click();
@@ -1495,7 +1495,7 @@ function anchorPopover(tip, button) {
   tip.style.left = `${left}px`;
   tip.style.top = `${below + tip.offsetHeight > window.innerHeight - 12 && above > 12 ? above : below}px`;
 }
-for (const tip of document.querySelectorAll('.tip, #project-menu, #tracks-menu')) tip.addEventListener('toggle', event => {
+for (const tip of document.querySelectorAll('.tip, #project-menu')) tip.addEventListener('toggle', event => {
   const button = document.querySelector(`[popovertarget="${tip.id}"]`);
   button.classList.toggle('open', event.newState === 'open');
   if (event.newState === 'open') anchorPopover(tip, button);
