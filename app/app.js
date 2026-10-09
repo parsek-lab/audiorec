@@ -592,6 +592,15 @@ function selectClip(clip, toggle) {
   if (!toggle) selectedClips.clear();
   if (toggle && selectedClips.has(clip)) selectedClips.delete(clip); else selectedClips.add(clip);
   updateSelection();
+  if (selectedClips.has(clip)) revealClipItem(clip);
+}
+// Scroll the clip list (only the list, never the page) so the clip's row is fully visible.
+function revealClipItem(clip) {
+  const list = $('clip-items'), item = [...list.children].find(row => row.clip === clip);
+  if (!item || $('clip-list').classList.contains('collapsed')) return;
+  const top = item.offsetTop - list.offsetTop, bottom = top + item.offsetHeight, margin = 6;
+  if (top - margin < list.scrollTop) list.scrollTo({ top: top - margin, behavior: 'smooth' });
+  else if (bottom + margin > list.scrollTop + list.clientHeight) list.scrollTo({ top: bottom + margin - list.clientHeight, behavior: 'smooth' });
 }
 function selectArea(event, lane) {
   event.preventDefault();
