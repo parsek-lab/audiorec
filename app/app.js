@@ -232,7 +232,7 @@ function database() {
 }
 function projectData() {
   return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
-    tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, volume: t.volume ?? 1, color: trackColor(t),
+    tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, visible: t.visible !== false, volume: t.volume ?? 1, color: trackColor(t),
       clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
 }
@@ -269,7 +269,7 @@ async function restoreProject() {
           buffer.copyToChannel(c.samples, 0);
           return { name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, buffer };
         });
-        tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
+        tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, visible: saved.visible !== false, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
       }
       nextId = data.nextId; timelineLength = validLength(data.timelineLength ?? null) ? data.timelineLength ?? null : null;
       restoreMarkers(data);
@@ -281,14 +281,14 @@ async function restoreProject() {
       }
       video.muted = !!data.videoMuted; setVideoGain(validVolume(data.videoVolume) ? data.videoVolume : 1);
       status(tr('Project restored from the browser.'));
-    } else tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
+    } else tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, visible: true, clips: [] });
   } catch (error) {
     tracks.length = 0;
-    tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
+    tracks.push({ id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, visible: true, clips: [] });
     status(tr('Local storage unavailable: {message}', { message: error.message }));
   } finally {
     restoring = false; clearHistory(); renderTracks();
-    for (const id of ['video-file', 'add-track', 'import-audio', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
+    for (const id of ['video-file', 'add-track', 'import-audio', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
   }
 }
 function formatSpan(seconds) {
@@ -740,7 +740,7 @@ async function addTrack() {
   const name = await askName(tr('New track'), tr('Track {n}', { n: nextId }), tr('Add track'));
   if (name === null || recording) return;
   remember(tr('add track'));
-  const track = { id: nextId++, name, armed: true, muted: false, clips: [] };
+  const track = { id: nextId++, name, armed: true, muted: false, visible: true, clips: [] };
   tracks.push(track); armTrack(track);
   renderTracks(); saveProject(); status(tr('Track added: {name}.', { name }));
 }
@@ -831,8 +831,9 @@ function showOutputLevel(element, peak) {
   if (peak >= .99) element.parentElement.dataset.clipUntil = performance.now() + 1000;
   element.parentElement.classList.toggle('clipping', performance.now() < (+element.parentElement.dataset.clipUntil || 0));
 }
-function trackPeak(track, time) {
-  if (track.muted) return 0;
+const hidden = isHidden;
+const trackPeak = (track, time) => {
+  if (track.muted || isHidden(track)) return 0;
   let peak = 0;
   for (const clip of track.clips) {
     const offset = time - clip.start;
@@ -851,7 +852,7 @@ function videoPeak(time) {
 }
 function masterPeak(time) {
   let peak = 0;
-  const clips = tracks.filter(t => !t.muted).flatMap(t => t.clips.map(clip => ({ clip, gain: t.volume ?? 1 }))).filter(({ clip }) => !clip.muted && time >= clip.start && time < clip.start + clipDuration(clip));
+  const clips = tracks.filter(t => !t.muted && !isHidden(t)).flatMap(t => t.clips.map(clip => ({ clip, gain: t.volume ?? 1 }))).filter(({ clip }) => !clip.muted && time >= clip.start && time < clip.start + clipDuration(clip));
   for (let k = 0; k < 400; k++) {
     const at = time + k * .05 / 400;
     let sum = 0;
@@ -872,14 +873,15 @@ function updateOutputMeters() {
 }
 const startOutputMeters = () => { outputMeterFrame ??= requestAnimationFrame(updateOutputMeters); };
 function renderTracks() {
-  const armed = tracks.filter(t => t.armed);
-  if (tracks.length && armed.length !== 1) armTrack(armed[0] ?? tracks[0]);
+  const armed = tracks.filter(t => t.armed && !isHidden(t));
+  if (tracks.length && armed.length !== 1) armTrack(armed[0] ?? tracks.find(t => !isHidden(t)) ?? tracks[0]);
   renderTimeline();
   $('tracks').replaceChildren(); $('track-heads').replaceChildren(); clipElements.clear(); outputMeters.clear();
   const present = new Set(tracks.flatMap(t => t.clips));
   for (const clip of selectedClips) if (!present.has(clip)) selectedClips.delete(clip);
   const laneWidth = Math.ceil(parseInt($('timeline').style.width, 10));
   for (const track of tracks) {
+    if (isHidden(track)) continue;
     const row = document.createElement('div'); row.className = 'lane-row'; row.style.setProperty('--track-color', trackColor(track));
     const title = document.createElement('span'); title.className = 'track-name'; title.textContent = track.name;
     title.title = tr('Rename track (double-click)');
@@ -1036,13 +1038,38 @@ function formatDb(gain) {
 const TRACK_COLORS = [[tr('Violet'), '#8b7bff'], [tr('Blue'), '#4f8cff'], [tr('Cyan'), '#3cc8e6'], [tr('Green'), '#3ee0a1'], [tr('Yellow'), '#ffc857'], [tr('Orange'), '#ff9454'], [tr('Red'), '#ff5f7e'], [tr('Pink'), '#e879f9']];
 const validColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const trackColor = track => validColor(track.color) ? track.color : TRACK_COLORS[(track.id - 1) % TRACK_COLORS.length][1];
+// Per-track visibility: hiding takes the track out of the timeline and the mix, and it stays out of both exports;
+// unlike Mute it is a presentation choice and does not touch the track volume or its stored audio.
+function isHidden(track) { return track.visible === false; }
+function setTrackVisible(track, visible) {
+  if (visible === !isHidden(track)) return;
+  remember(visible ? tr('show track') : tr('hide track'));
+  track.visible = visible;
+  renderTracks(); syncPlayback(); saveProject();
+  status(visible ? tr('{track} shown.', { track: track.name }) : tr('{track} hidden.', { track: track.name }));
+}
+function renderVisibilityList() {
+  const switchFor = track => {
+    const row = document.createElement('label'); row.className = 'visibility-row'; row.style.setProperty('--track-color', trackColor(track));
+    const dot = document.createElement('span'); dot.className = 'visibility-dot'; dot.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span'); name.className = 'visibility-name'; name.textContent = track.name;
+    const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'visibility-switch'; input.checked = !isHidden(track);
+    input.setAttribute('aria-label', tr('Visible: {track}', { track: track.name }));
+    // Toggles in place: only the row's own class changes, so the dialog keeps its scroll position and focus.
+    input.onchange = () => { row.classList.toggle('hidden-track', !input.checked); setTrackVisible(track, input.checked); };
+    row.append(dot, name, input); row.classList.toggle('hidden-track', isHidden(track));
+    return row;
+  };
+  $('visibility-list').replaceChildren(...tracks.map(switchFor));
+}
+function openVisibility() { renderVisibilityList(); $('visibility-dialog').showModal(); }
 function applyVolume(track) { for (const source of playingSources) if (source.track === track) source.level.gain.setTargetAtTime(track.volume, context.currentTime, .02); }
 function syncPlayback() {
   stopPlayback();
   if (!isPlaying() || recording || !context) return;
   const now = playPosition();
   for (const track of tracks) {
-    if (track.muted) continue;
+    if (track.muted || isHidden(track)) continue;
     for (const clip of track.clips) {
       const elapsed = Math.max(0, now - clip.start);
       const duration = clipDuration(clip);
@@ -1234,9 +1261,9 @@ function rememberProjectFile(handle) {
 function projectBlob() {
     const data = projectData();
     const manifest = {
-      version: 4, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
+      version: 5, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
       video: data.videoFile ? { name: data.videoFile.name, type: data.videoFile.type, size: data.videoFile.size } : null,
-      tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, volume: track.volume, color: track.color,
+      tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, visible: !!track.visible, volume: track.volume, color: track.color,
         clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: clip.muted,
           sampleRate: clip.sampleRate, sampleCount: clip.samples.length })) }))
     };
@@ -1281,7 +1308,7 @@ async function openProject(file, handle = null) {
     const jsonLength = view.getUint32(8, true);
     if (jsonLength > bytes.byteLength - 12) throw new Error(tr('incomplete file'));
     const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
-    if (![1, 2, 3, 4].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
+    if (![1, 2, 3, 4, 5].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
     if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error(tr('invalid length'));
     let position = 12 + jsonLength;
     const videoSize = manifest.video?.size || 0;
@@ -1291,8 +1318,8 @@ async function openProject(file, handle = null) {
     const audio = getContext();
     const importedTracks = manifest.tracks.map(track => {
       if (!Array.isArray(track.clips) || !Number.isSafeInteger(track.id)) throw new Error(tr('invalid track'));
-      if ((manifest.version >= 2 && !validVolume(track.volume)) || (manifest.version >= 3 && !validColor(track.color))) throw new Error(tr('invalid track'));
-      return { id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, volume: manifest.version >= 2 ? track.volume : 1, color: manifest.version >= 3 ? track.color : undefined,
+      if ((manifest.version >= 2 && !validVolume(track.volume)) || (manifest.version >= 3 && !validColor(track.color)) || (manifest.version >= 5 && typeof track.visible !== 'boolean')) throw new Error(tr('invalid track'));
+      return { id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, visible: manifest.version >= 5 ? track.visible : true, volume: manifest.version >= 2 ? track.volume : 1, color: manifest.version >= 3 ? track.color : undefined,
         clips: track.clips.map(clip => {
           const { sampleCount, sampleRate } = clip;
           if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || sampleCount * 4 > bytes.byteLength - position) throw new Error(tr('invalid audio'));
@@ -1333,7 +1360,7 @@ async function newProject() {
   showVideoName(null);
   video.muted = false; setVideoGain(1);
   nextId = 1; timelineLength = null; exportIn = 0; exportOut = null; clearHistory();
-  tracks.splice(0, tracks.length, { id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, clips: [] });
+  tracks.splice(0, tracks.length, { id: nextId, name: tr('Track {n}', { n: nextId++ }), armed: true, muted: false, visible: true, clips: [] });
   renderTracks(); await saveProject(); status(tr('New project started.'));
 }
 // Export: audio only (WAV) or video + audio (MP4 with the original video packets copied and the new mix as soundtrack),
@@ -1414,7 +1441,7 @@ function renderMix(start, end, rate, channels, videoBuffer) {
     node.connect(level); level.connect(offline.destination); node.start(0, start);
   }
   for (const track of tracks) {
-    if (track.muted) continue;
+    if (track.muted || isHidden(track)) continue;
     for (const clip of track.clips) {
       const duration = clipDuration(clip), elapsed = Math.max(0, start - clip.start);
       if (clip.muted || duration <= 0 || elapsed >= duration || clip.start >= end) continue;
@@ -1523,7 +1550,7 @@ async function runExport() {
   const range = readExportRange(), kind = exportKind();
   if (range.error || exporting) return;
   const withVideoAudio = $('export-video-audio').checked;
-  if (kind === 'audio' && !withVideoAudio && !tracks.some(t => !t.muted && t.clips.some(c => !c.muted))) { status(tr('No unmuted recordings to export.')); return; }
+  if (kind === 'audio' && !withVideoAudio && !tracks.some(t => !t.muted && !isHidden(t) && t.clips.some(c => !c.muted))) { status(tr('No audible recordings to export.')); return; }
   const job = exporting = { canceled: false }, progress = $('export-progress'), name = exportFileName(kind);
   for (const element of $('export-dialog').querySelectorAll('input, .export-range button')) element.disabled = true;
   progress.hidden = false; progress.removeAttribute('value');
@@ -1593,6 +1620,12 @@ video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring
 updateVideoMute();
 for (const id of ['project-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
 $('name-cancel').onclick = () => $('name-dialog').close('cancel');
+$('track-visibility').onclick = openVisibility;
+$('visibility-close').onclick = () => $('visibility-dialog').close();
+$('visibility-dialog').addEventListener('click', event => {
+  const box = event.target.getBoundingClientRect?.();
+  if (event.target === $('visibility-dialog') && box && (event.clientY < box.top || event.clientY > box.bottom || event.clientX < box.left || event.clientX > box.right)) $('visibility-dialog').close();
+});
 $('add-track').onclick = addTrack;
 $('import-audio').onclick = () => $('import-file').click();
 $('import-file').onchange = event => { const files = [...event.target.files]; event.target.value = ''; importAudio(files); };
@@ -1644,16 +1677,21 @@ for (const tip of document.querySelectorAll('dialog.tip')) {
   tip.querySelector('.tip-close').onclick = () => tip.close();
   tip.addEventListener('click', event => { const box = tip.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) tip.close(); });
 }
-for (const tip of document.querySelectorAll('#project-menu')) tip.addEventListener('toggle', event => {
+for (const tip of document.querySelectorAll('#project-menu, #language-menu')) tip.addEventListener('toggle', event => {
   const button = document.querySelector(`[popovertarget="${tip.id}"]`);
   button.classList.toggle('open', event.newState === 'open');
   if (event.newState === 'open') anchorPopover(tip, button);
 });
 $('open-settings').onclick = () => $('device-dialog').showModal();
-// Language choice, shown once at least one translation is installed; changing it reloads the page in that language.
-$('language-field').hidden = I18N.languages().length < 2;
-$('language').replaceChildren(...I18N.languages().map(([code, name]) => new Option(name, code, false, code === I18N.language)));
-$('language').onchange = event => I18N.setLanguage(event.target.value);
+// Dedicated header menu; native popover handles Escape and outside clicks.
+$('language-options').replaceChildren(...I18N.languages().map(([code, name]) => {
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'menu-item';
+  button.textContent = name; button.lang = code; button.dataset.language = code;
+  if (code === I18N.language) button.setAttribute('aria-current', 'true');
+  button.onclick = () => I18N.setLanguage(code);
+  return button;
+}));
+$('language-button').setAttribute('aria-label', tr('Language'));
 $('input-meter').onclick = () => { if (!recording) $('test-mic').click(); };
 $('monitor').onclick = toggleMonitor;
 $('enhanced-audio').onclick = toggleEnhancedAudio;
@@ -1815,7 +1853,7 @@ video.addEventListener('ended', () => {
   if (recording) finishRecording(); stopPlayback(); stopPlayhead();
 });
 navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
-for (const id of ['video-file', 'add-track', 'import-audio', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
+for (const id of ['video-file', 'add-track', 'import-audio', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
 // An AudioContext created before any click starts suspended (e.g. when restoring a boosted video volume).
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
 // Custom tooltips: every title attribute (static or set later by code) moves to data-tooltip, so the native tooltip never

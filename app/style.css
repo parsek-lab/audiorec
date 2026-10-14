@@ -31,6 +31,9 @@ kbd{font:500 .78rem var(--mono);padding:2px 7px;border-radius:6px;background:var
 .logo{display:block;width:40px;height:40px;flex:none;filter:drop-shadow(0 6px 18px rgba(255,77,109,.22))}
 .project-name{font-size:.8rem;color:var(--subtle);max-width:32ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .header-actions{display:flex;align-items:center;gap:6px;flex:none}
+.language-button{padding:8px 11px;font-size:.85rem;flex:none}
+.language-menu{min-width:190px}.language-hint{padding:0 10px 6px;color:var(--muted);font-size:.72rem;max-width:220px}.language-menu #language-options{display:grid;gap:2px}.language-menu .menu-item[aria-current=true]{color:var(--accent-2);background:var(--raised)}
+@media(max-width:760px){.language-button span:last-child{display:none}.language-button{width:38px;height:38px;padding:0}.topbar .brand{min-width:0}.topbar .brand>div{min-width:0}.topbar .project-name{max-width:16ch}}
 
 /* Buttons */
 button,.button,select{font:500 .9rem/1.2 var(--font);color:var(--text);background:var(--raised);border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:9px 14px;cursor:pointer;transition:background .18s,border-color .18s,transform .12s,box-shadow .18s,opacity .18s}
@@ -252,6 +255,18 @@ dialog::backdrop{background:rgba(4,6,12,.7);backdrop-filter:blur(6px)}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 
 .export-dialog{width:min(92vw,520px)}
+.visibility-dialog{width:min(92vw,420px)}
+.visibility-dialog h2{display:flex;align-items:center;gap:10px}
+.visibility-help{margin:-10px 0 14px;font-size:.82rem;color:var(--muted)}
+.visibility-list{display:grid;gap:4px;max-height:min(56vh,420px);overflow-y:auto;scrollbar-color:#3a4460 transparent;scrollbar-width:thin}
+.visibility-list:empty{display:none}
+.visibility-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);background:rgba(255,255,255,.03);border:1px solid var(--line);cursor:pointer}
+.visibility-row:hover{background:rgba(255,255,255,.06)}
+.visibility-dot{width:10px;height:10px;border-radius:50%;background:var(--track-color);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.visibility-name{font-size:.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.visibility-switch{width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex:none}
+.visibility-row.hidden-track .visibility-dot{background:var(--muted)}
+.visibility-row.hidden-track .visibility-name{color:var(--muted)}
 .export-dialog h2{display:flex;align-items:center;gap:10px}
 .export-dialog fieldset{margin:0 0 16px;padding:0;border:0;min-width:0}
 .export-dialog legend{padding:0;margin-bottom:8px;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
@@ -298,7 +313,6 @@ dialog.tip{width:min(92vw,680px)}
 .tip-body p{color:var(--subtle)}.tip-body strong{color:var(--text);font-weight:600}
 .tip code{font:500 .85rem var(--mono);color:var(--accent-2)}
 .devices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.devices label[hidden]{display:none}
 .devices label{display:grid;gap:7px;color:var(--subtle);font-size:.82rem;font-weight:500}
 .devices select{width:100%;min-width:0;padding:10px 12px;background:#0d1019}
 .mic-monitor{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;padding:14px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line)}

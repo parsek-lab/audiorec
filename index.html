@@ -40,7 +40,10 @@ kbd{font:500 .78rem var(--mono);padding:2px 7px;border-radius:6px;background:var
 .logo{display:block;width:40px;height:40px;flex:none;filter:drop-shadow(0 6px 18px rgba(255,77,109,.22))}
 .brand-name{font-size:1.2rem;font-weight:700;letter-spacing:-.03em;color:var(--text)}
 .brand-sub{font-size:.78rem;color:var(--subtle)}
-.nav{display:flex;align-items:center;gap:4px}
+.nav{display:flex;align-items:center;gap:4px;min-width:0}
+.language-control{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:var(--subtle);font-size:.82rem}
+.language-control select{min-height:36px;max-width:116px;padding:6px 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--raised);color:var(--text);font:500 .82rem var(--font);cursor:pointer}
+.language-control select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .nav a.link{color:var(--subtle);text-decoration:none;font-size:.88rem;font-weight:500;padding:8px 12px;border-radius:var(--radius-sm)}
 .nav a.link:hover{color:var(--text);background:var(--raised)}
 
@@ -122,6 +125,11 @@ footer span{font-family:var(--mono)}
 
 @media (max-width:720px){
   .nav a.link{display:none}
+  .brand-sub{display:none}
+  .brand{gap:6px}.brand-name{font-size:1rem}.logo{width:34px;height:34px}
+  .topbar{gap:6px;padding:8px}
+  .language-control span{display:none}.language-control select{max-width:90px}
+  .nav .small{padding:8px 10px}
   .private{grid-template-columns:1fr}
   .mock-video{aspect-ratio:16/9}
   .mock .hide-sm{display:none}
@@ -149,36 +157,36 @@ footer span{font-family:var(--mono)}
 <div class="wrap">
   <header class="topbar">
     <div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="logo-wave" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="64" y2="64"><stop offset="0" stop-color="#8b7bff"/><stop offset=".55" stop-color="#5b8cff"/><stop offset="1" stop-color="#4fd1ff"/></linearGradient><linearGradient id="logo-dot" gradientUnits="userSpaceOnUse" x1="14" y1="22" x2="34" y2="42"><stop offset="0" stop-color="#ff5f7e"/><stop offset="1" stop-color="#e0294f"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#141824"/><rect x=".75" y=".75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#94a3c8" stroke-opacity=".28" stroke-width="1.5"/><circle cx="24" cy="32" r="10" fill="url(#logo-dot)"/><g fill="none" stroke="url(#logo-wave)" stroke-width="4.5" stroke-linecap="round"><path d="M38 22a14 14 0 0 1 0 20"/><path d="M45 15a24 24 0 0 1 0 34"/></g></svg><div><div class="brand-name">Audiorec</div><div class="brand-sub">Voice-over in the browser</div></div></div>
-    <nav class="nav"><a class="link" href="#how">How it works</a><a class="link" href="#features">Features</a><a class="link" href="#keys">Shortcuts</a><a class="button primary small" href="app/">Open app</a></nav>
+    <nav class="nav"><label class="language-control"><span>Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="it">Italiano</option><option value="es">Español</option><option value="ru">Русский</option><option value="zh">简体中文</option></select></label><a class="link" href="#how">How it works</a><a class="link" href="#features">Features</a><a class="link" href="#keys">Shortcuts</a><a class="button primary small" href="app/">Open app</a></nav>
   </header>
 
   <div class="hero">
     <div class="pitch">
       <span class="eyebrow">Free · no install · no sign-up</span>
-      <h1>Record your voice <em>over any video</em>, right in the browser.</h1>
-      <p class="lead">Load a clip, press <strong>Record</strong> and talk while it plays. Your takes land on a multi-track timeline where you can trim, move and mix them, then export a clean WAV that lines up with the video frame by frame.</p>
+      <h1 data-landing-key="hero">Record your voice <em>over any video</em>, right in the browser.</h1>
+      <p class="lead" data-landing-key="lead">Load a clip, press <strong>Record</strong> and talk while it plays. Your takes land on a multi-track timeline where you can trim, move and mix them, then export a clean WAV that lines up with the video frame by frame.</p>
       <div class="actions"><a class="button primary" href="app/">Start recording <svg class="icon"><use href="#i-arrow"/></svg></a><a class="button" href="#how">See how it works</a></div>
       <p class="note">Works best in Chrome or Edge on desktop. Your video and recordings never leave your computer.</p>
     </div>
 
-    <div class="mock" aria-label="Preview of the Audiorec editor while recording" role="img">
-      <div class="mock-video"><canvas id="scene"></canvas><span class="rec-badge">REC</span><span class="subtitle">“…and this is where the river finally reaches the sea.”</span></div>
+    <div class="mock" aria-label="Preview of the Audiorec editor while recording" role="group">
+      <div class="mock-video"><canvas id="scene"></canvas><span class="rec-badge" translate="no">REC</span><span class="subtitle">“…and this is where the river finally reaches the sea.”</span></div>
       <div class="mock-bar">
         <div class="group"><span class="button record small"><svg class="icon"><use href="#i-record"/></svg>Stop</span><span class="meter"><svg class="icon"><use href="#i-mic"/></svg><span class="meter-track"><span class="meter-fill"></span></span></span><span class="chip hide-sm"><svg class="icon" style="width:14px;height:14px;vertical-align:-2px;color:var(--ok)"><use href="#i-headphones"/></svg> Monitor</span></div>
-        <div class="group"><span class="time" id="clock">00:23:14</span><span class="chip hide-sm">Length 01:00</span></div>
+        <div class="group"><span class="time" id="clock" translate="no">00:23:14</span><span class="chip hide-sm">Length 01:00</span></div>
       </div>
       <div class="tracks">
         <div class="heads">
           <div class="ruler-spacer"></div>
-          <div class="head" style="--c:#8b7bff"><span>Narration</span><span class="rec-pill on">REC</span></div>
-          <div class="head" style="--c:#3ee0a1"><span>Second voice</span><span class="rec-pill">REC</span></div>
-          <div class="head" style="--c:#ffc857"><span>Music</span><span class="rec-pill">REC</span></div>
+          <div class="head" style="--c:#8b7bff"><span>Narration</span><span class="rec-pill on" translate="no">REC</span></div>
+          <div class="head" style="--c:#3ee0a1"><span>Second voice</span><span class="rec-pill" translate="no">REC</span></div>
+          <div class="head" style="--c:#ffc857"><span>Music</span><span class="rec-pill" translate="no">REC</span></div>
         </div>
         <div class="timeline" id="timeline">
-          <div class="ruler"><span class="tick" style="left:0">00:00</span><span class="tick" style="left:12.5%">00:05</span><span class="tick" style="left:25%">00:10</span><span class="tick" style="left:37.5%">00:15</span><span class="tick" style="left:50%">00:20</span><span class="tick" style="left:62.5%">00:25</span><span class="tick" style="left:75%">00:30</span><span class="tick" style="left:87.5%">00:35</span></div>
+          <div class="ruler" translate="no"><span class="tick" style="left:0">00:00</span><span class="tick" style="left:12.5%">00:05</span><span class="tick" style="left:25%">00:10</span><span class="tick" style="left:37.5%">00:15</span><span class="tick" style="left:50%">00:20</span><span class="tick" style="left:62.5%">00:25</span><span class="tick" style="left:75%">00:30</span><span class="tick" style="left:87.5%">00:35</span></div>
           <div class="lane" style="--c:#8b7bff"><div class="clip" style="left:3%;width:20%"><canvas data-seed="3"></canvas><b>Intro</b></div><div class="clip selected" style="left:27%;width:14%"><canvas data-seed="7"></canvas><b>Take 2</b></div><div class="clip live" id="live" style="left:44%;width:14%"><canvas data-seed="11"></canvas><b>Recording…</b></div></div>
           <div class="lane" style="--c:#3ee0a1"><div class="clip" style="left:14%;width:16%"><canvas data-seed="5"></canvas><b>Answer</b></div><div class="clip" style="left:70%;width:22%"><canvas data-seed="9"></canvas><b>Outro</b></div></div>
-          <div class="lane" style="--c:#ffc857"><div class="clip" style="left:0;width:96%"><canvas data-seed="2" data-dense="1"></canvas><b>theme.mp3</b></div></div>
+          <div class="lane" style="--c:#ffc857"><div class="clip" style="left:0;width:96%"><canvas data-seed="2" data-dense="1"></canvas><b translate="no">theme.mp3</b></div></div>
           <div class="playhead" id="playhead"></div>
         </div>
       </div>
@@ -188,9 +196,9 @@ footer span{font-family:var(--mono)}
   <section id="how">
     <div class="section-head"><span class="eyebrow">How it works</span><h2>From silent clip to finished narration in three steps.</h2></div>
     <div class="steps">
-      <div class="step"><div class="step-top"><span class="step-num">1</span><h3>Choose a video</h3></div><p>Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.</p></div>
-      <div class="step"><div class="step-top"><span class="step-num">2</span><h3>Record while it plays</h3></div><p>Arm a track with <strong>REC</strong> and press <kbd>*</kbd>. You see your take being drawn live, and the level meter tells you if you're too quiet or clipping.</p></div>
-      <div class="step"><div class="step-top"><span class="step-num">3</span><h3>Edit and export</h3></div><p>Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.</p></div>
+      <div class="step"><div class="step-top"><span class="step-num" translate="no">1</span><h3>Choose a video</h3></div><p>Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.</p></div>
+      <div class="step"><div class="step-top"><span class="step-num" translate="no">2</span><h3>Record while it plays</h3></div><p data-landing-key="step-record">Arm a track with <strong>REC</strong> and press <kbd>*</kbd>. You see your take being drawn live, and the level meter tells you if you're too quiet or clipping.</p></div>
+      <div class="step"><div class="step-top"><span class="step-num" translate="no">3</span><h3>Edit and export</h3></div><p>Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.</p></div>
     </div>
   </section>
 
@@ -198,23 +206,23 @@ footer span{font-family:var(--mono)}
     <div class="section-head"><span class="eyebrow">Features</span><h2>A small studio, without the setup.</h2></div>
     <div class="features">
       <div class="feature"><svg class="icon"><use href="#i-layers"/></svg><h3>Multi-track timeline</h3><p>Separate tracks for each voice or for music, each with its own color, volume and mute.</p></div>
-      <div class="feature"><svg class="icon"><use href="#i-video"/></svg><h3>Frame-accurate ruler</h3><p>Times read <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>. Zoom from the whole video down to one second.</p></div>
+      <div class="feature"><svg class="icon"><use href="#i-video"/></svg><h3>Frame-accurate ruler</h3><p data-landing-key="frames">Times read <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>. Zoom from the whole video down to one second.</p></div>
       <div class="feature"><svg class="icon"><use href="#i-headphones"/></svg><h3>Hear yourself live</h3><p>Turn on Monitor to listen to the microphone in your headphones while you record.</p></div>
       <div class="feature"><svg class="icon"><use href="#i-import"/></svg><h3>Bring your own audio</h3><p>Drag music or sound files onto a track and place them exactly where they belong.</p></div>
       <div class="feature"><svg class="icon"><use href="#i-undo"/></svg><h3>Undo everything</h3><p>Every move, trim, delete and rename can be undone and redone.</p></div>
-      <div class="feature"><svg class="icon"><use href="#i-save"/></svg><h3>Projects that keep</h3><p>Work autosaves in the browser. Save a <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span> file to move a project to another computer.</p></div>
+      <div class="feature"><svg class="icon"><use href="#i-save"/></svg><h3>Projects that keep</h3><p data-landing-key="projects">Work autosaves in the browser. Save a <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span> file to move a project to another computer.</p></div>
     </div>
   </section>
 
   <section id="keys">
     <div class="section-head"><span class="eyebrow">Shortcuts</span><h2>Keep your hands on the keyboard.</h2></div>
     <div class="shortcuts">
-      <div class="shortcut">Play / pause <kbd>Space</kbd></div>
-      <div class="shortcut">Start / stop recording <kbd>*</kbd></div>
-      <div class="shortcut">Video full screen <kbd>W</kbd></div>
-      <div class="shortcut">Zoom in / out <span><kbd>+</kbd> <kbd>-</kbd></span></div>
-      <div class="shortcut">Delete selected clips <kbd>Del</kbd></div>
-      <div class="shortcut">Undo / redo <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span></div>
+      <div class="shortcut" data-landing-key="shortcut-play">Play / pause <kbd>Space</kbd></div>
+      <div class="shortcut" data-landing-key="shortcut-record">Start / stop recording <kbd>*</kbd></div>
+      <div class="shortcut" data-landing-key="shortcut-fullscreen">Video full screen <kbd>W</kbd></div>
+      <div class="shortcut" data-landing-key="shortcut-zoom">Zoom in / out <span><kbd>+</kbd> <kbd>-</kbd></span></div>
+      <div class="shortcut" data-landing-key="shortcut-delete">Delete selected clips <kbd>Del</kbd></div>
+      <div class="shortcut" data-landing-key="shortcut-undo">Undo / redo <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span></div>
     </div>
   </section>
 
@@ -239,7 +247,99 @@ footer span{font-family:var(--mono)}
 
 <script>
 (() => {
-  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // Keep the landing page self-contained: only its own visible copy is translated here.
+  const LANDING = {
+    it: {
+      'Voice-over in the browser':'Voice-over nel browser','Language':'Lingua','How it works':'Come funziona','Features':'Funzioni','Shortcuts':'Scorciatoie','Open app':'Apri app','Free · no install · no sign-up':'Gratis · senza installazione · senza registrazione',
+      'Start recording':'Inizia a registrare','See how it works':'Scopri come funziona','Works best in Chrome or Edge on desktop. Your video and recordings never leave your computer.':'Funziona meglio su Chrome o Edge per desktop. Video e registrazioni restano sul tuo computer.',
+      'Stop':'Interrompi','Monitor':'Ascolto','Length 01:00':'Durata 01:00','Narration':'Narrazione','Second voice':'Seconda voce','Music':'Musica','Recording…':'Registrazione…',
+      'From silent clip to finished narration in three steps.':'Dal video muto alla narrazione completa in tre passi.','Choose a video':'Scegli un video','Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.':'Apri un file MP4, MOV o WebM. Audiorec legge la frequenza dei fotogrammi e mostra minuti, secondi e fotogrammi sulla timeline.',
+      'Record while it plays':'Registra durante la riproduzione','Edit and export':'Modifica ed esporta',"Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.":'Rifila, sposta e duplica le clip, regola il volume delle tracce ed esporta un WAV della stessa durata della timeline, pronto per il montaggio video.',
+      'A small studio, without the setup.':'Un piccolo studio, senza configurazione.','Multi-track timeline':'Timeline multitraccia','Separate tracks for each voice or for music, each with its own color, volume and mute.':'Tracce separate per ogni voce o brano musicale, ciascuna con colore, volume e disattivazione audio.',
+      'Frame-accurate ruler':'Righello preciso al fotogramma','Hear yourself live':'Ascoltati in diretta','Turn on Monitor to listen to the microphone in your headphones while you record.':'Attiva l’ascolto per sentire il microfono nelle cuffie mentre registri.','Bring your own audio':'Importa il tuo audio','Drag music or sound files onto a track and place them exactly where they belong.':'Trascina musica o file audio su una traccia e posizionali dove vuoi.',
+      'Undo everything':'Annulla ogni modifica','Every move, trim, delete and rename can be undone and redone.':'Puoi annullare e ripetere spostamenti, tagli, eliminazioni e rinomine.','Projects that keep':'Progetti che restano',
+      'Keep your hands on the keyboard.':'Lavora con la tastiera.','Private by design':'Privacy integrata','Nothing is uploaded. Ever.':'Nessun caricamento. Mai.','Audiorec runs entirely in your browser. There is no account and no server storing your files: the video, your voice and your projects stay on your own computer.':'Audiorec funziona interamente nel browser. Nessun account o server conserva i tuoi file: video, voce e progetti restano sul tuo computer.',
+      'No sign-up, no account':'Nessuna registrazione o account','Files stay on your device':'I file restano sul tuo dispositivo','Export as standard 16-bit WAV':'Esporta in WAV standard a 16 bit','Free to use':'Uso gratuito','Got a video that needs a voice?':'Hai un video a cui dare voce?','Open Audiorec':'Apri Audiorec','audiorec.app · Chrome or Edge recommended':'audiorec.app · Consigliati Chrome o Edge',
+      'Preview of the Audiorec editor while recording':'Anteprima di Audiorec durante la registrazione','Record your voice over any video, right in the browser. Multi-track timeline, frame-accurate ruler, WAV export. Free, no sign-up, nothing uploaded.':'Registra la tua voce sopra qualsiasi video nel browser. Timeline multitraccia, precisione al fotogramma, esportazione WAV. Gratis, senza account o caricamenti.',
+      hero:'Registra la tua voce <em>sopra qualsiasi video</em>, direttamente nel browser.',lead:'Carica un video, premi <strong>Registra</strong> e parla durante la riproduzione. Le registrazioni finiscono in una timeline multitraccia: puoi rifilarle, spostarle e mixarle, poi esportare un WAV sincronizzato fotogramma per fotogramma.',
+      'step-record':'Attiva <strong>REC</strong> su una traccia e premi <kbd>*</kbd>. Vedrai la registrazione comparire in tempo reale; il livello indica se la voce è troppo bassa o distorta.',frames:'I tempi sono in <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>. Puoi ingrandire la timeline fino a mostrare un solo secondo.',projects:'Il lavoro viene salvato automaticamente nel browser. Salva un file <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span> per trasferire il progetto su un altro computer.',
+      'shortcut-play':'Riproduci / pausa <kbd>Space</kbd>','shortcut-record':'Avvia / interrompi registrazione <kbd>*</kbd>','shortcut-fullscreen':'Video a schermo intero <kbd>W</kbd>','shortcut-zoom':'Zoom avanti / indietro <span><kbd>+</kbd> <kbd>-</kbd></span>','shortcut-delete':'Elimina clip selezionate <kbd>Del</kbd>','shortcut-undo':'Annulla / ripeti <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span>'
+    },
+    es: {
+      'Voice-over in the browser':'Locución en el navegador','Language':'Idioma','How it works':'Cómo funciona','Features':'Funciones','Shortcuts':'Atajos','Open app':'Abrir app','Free · no install · no sign-up':'Gratis · sin instalación · sin registro',
+      'Start recording':'Empezar a grabar','See how it works':'Descubre cómo funciona','Works best in Chrome or Edge on desktop. Your video and recordings never leave your computer.':'Funciona mejor en Chrome o Edge de escritorio. Tus vídeos y grabaciones nunca salen de tu equipo.',
+      'Stop':'Detener','Monitor':'Monitor','Length 01:00':'Duración 01:00','Narration':'Narración','Second voice':'Segunda voz','Music':'Música','Recording…':'Grabando…',
+      'From silent clip to finished narration in three steps.':'De un vídeo mudo a una narración terminada en tres pasos.','Choose a video':'Elige un vídeo','Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.':'Abre un archivo MP4, MOV o WebM. Audiorec lee su frecuencia de imagen para mostrar minutos, segundos y fotogramas en la línea de tiempo.',
+      'Record while it plays':'Graba durante la reproducción','Edit and export':'Edita y exporta',"Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.":'Recorta, mueve y duplica clips, ajusta el volumen de cada pista y exporta un WAV con la misma duración que la línea de tiempo, listo para tu editor de vídeo.',
+      'A small studio, without the setup.':'Un pequeño estudio sin complicaciones.','Multi-track timeline':'Línea de tiempo multipista','Separate tracks for each voice or for music, each with its own color, volume and mute.':'Pistas independientes para voces y música, cada una con su color, volumen y control de silencio.',
+      'Frame-accurate ruler':'Regla precisa al fotograma','Hear yourself live':'Escúchate en directo','Turn on Monitor to listen to the microphone in your headphones while you record.':'Activa la escucha del micrófono con auriculares mientras grabas.','Bring your own audio':'Importa tus audios','Drag music or sound files onto a track and place them exactly where they belong.':'Arrastra música o archivos de sonido a una pista y colócalos donde quieras.',
+      'Undo everything':'Deshaz cualquier cambio','Every move, trim, delete and rename can be undone and redone.':'Puedes deshacer y rehacer desplazamientos, recortes, eliminaciones y cambios de nombre.','Projects that keep':'Proyectos que perduran',
+      'Keep your hands on the keyboard.':'Trabaja desde el teclado.','Private by design':'Privacidad desde el diseño','Nothing is uploaded. Ever.':'No se sube nada. Nunca.','Audiorec runs entirely in your browser. There is no account and no server storing your files: the video, your voice and your projects stay on your own computer.':'Audiorec funciona íntegramente en el navegador. No hay cuentas ni servidores que guarden tus archivos: tu vídeo, tu voz y tus proyectos permanecen en tu equipo.',
+      'No sign-up, no account':'Sin registro ni cuenta','Files stay on your device':'Los archivos permanecen en tu dispositivo','Export as standard 16-bit WAV':'Exportación WAV estándar de 16 bits','Free to use':'Uso gratuito','Got a video that needs a voice?':'¿Tienes un vídeo que necesita voz?','Open Audiorec':'Abrir Audiorec','audiorec.app · Chrome or Edge recommended':'audiorec.app · Se recomienda Chrome o Edge',
+      'Preview of the Audiorec editor while recording':'Vista previa del editor Audiorec durante la grabación','Record your voice over any video, right in the browser. Multi-track timeline, frame-accurate ruler, WAV export. Free, no sign-up, nothing uploaded.':'Graba tu voz sobre cualquier vídeo en el navegador. Línea de tiempo multipista, precisión al fotograma y exportación WAV. Gratis y sin subir archivos.',
+      hero:'Graba tu voz <em>sobre cualquier vídeo</em> directamente en el navegador.',lead:'Carga un vídeo, pulsa <strong>Grabar</strong> y habla mientras se reproduce. Tus tomas aparecen en una línea de tiempo multipista: recórtalas, muévelas y mézclalas para exportar un WAV sincronizado fotograma a fotograma.',
+      'step-record':'Activa <strong>REC</strong> en una pista y pulsa <kbd>*</kbd>. Verás tu toma en tiempo real; el medidor te indicará si la voz es demasiado baja o se satura.',frames:'Los tiempos se muestran en <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>. Amplía la línea de tiempo hasta ver un solo segundo.',projects:'El trabajo se guarda automáticamente en el navegador. Guarda un archivo <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span> para llevar tu proyecto a otro ordenador.',
+      'shortcut-play':'Reproducir / pausar <kbd>Space</kbd>','shortcut-record':'Iniciar / detener grabación <kbd>*</kbd>','shortcut-fullscreen':'Vídeo a pantalla completa <kbd>W</kbd>','shortcut-zoom':'Ampliar / reducir <span><kbd>+</kbd> <kbd>-</kbd></span>','shortcut-delete':'Eliminar clips seleccionados <kbd>Del</kbd>','shortcut-undo':'Deshacer / rehacer <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span>'
+    },
+    ru: {
+      'Voice-over in the browser':'Озвучка в браузере','Language':'Язык','How it works':'Как это работает','Features':'Возможности','Shortcuts':'Горячие клавиши','Open app':'Открыть приложение','Free · no install · no sign-up':'Бесплатно · без установки · без регистрации',
+      'Start recording':'Начать запись','See how it works':'Как это работает','Works best in Chrome or Edge on desktop. Your video and recordings never leave your computer.':'Лучше всего работает в Chrome или Edge на компьютере. Видео и записи остаются на вашем устройстве.',
+      'Stop':'Остановить','Monitor':'Монитор','Length 01:00':'Длина 01:00','Narration':'Озвучка','Second voice':'Второй голос','Music':'Музыка','Recording…':'Запись…',
+      'From silent clip to finished narration in three steps.':'От немого видео до готовой озвучки за три шага.','Choose a video':'Выберите видео','Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.':'Откройте MP4, MOV или WebM. Audiorec определит частоту кадров и покажет минуты, секунды и кадры на временной шкале.',
+      'Record while it plays':'Записывайте во время просмотра','Edit and export':'Редактируйте и экспортируйте',"Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.":'Обрезайте, перемещайте и дублируйте клипы, настраивайте громкость дорожек и экспортируйте WAV нужной длины для монтажа видео.',
+      'A small studio, without the setup.':'Небольшая студия без сложной настройки.','Multi-track timeline':'Многодорожечная шкала','Separate tracks for each voice or for music, each with its own color, volume and mute.':'Отдельные дорожки для голосов и музыки, каждая со своим цветом, громкостью и отключением звука.',
+      'Frame-accurate ruler':'Линейка с точностью до кадра','Hear yourself live':'Слушайте себя в реальном времени','Turn on Monitor to listen to the microphone in your headphones while you record.':'Включите прослушивание микрофона в наушниках во время записи.','Bring your own audio':'Импортируйте аудио','Drag music or sound files onto a track and place them exactly where they belong.':'Перетащите музыку или звуковые файлы на дорожку в нужное место.',
+      'Undo everything':'Отменяйте любые изменения','Every move, trim, delete and rename can be undone and redone.':'Любое перемещение, обрезку, удаление и переименование можно отменить или повторить.','Projects that keep':'Проекты сохраняются',
+      'Keep your hands on the keyboard.':'Управляйте с клавиатуры.','Private by design':'Конфиденциальность по умолчанию','Nothing is uploaded. Ever.':'Ничего не загружается на сервер.','Audiorec runs entirely in your browser. There is no account and no server storing your files: the video, your voice and your projects stay on your own computer.':'Audiorec полностью работает в браузере. Аккаунт и сервер для хранения файлов не нужны: видео, голос и проекты остаются на вашем компьютере.',
+      'No sign-up, no account':'Без регистрации и аккаунта','Files stay on your device':'Файлы остаются на вашем устройстве','Export as standard 16-bit WAV':'Экспорт в стандартный 16-битный WAV','Free to use':'Бесплатно','Got a video that needs a voice?':'Есть видео, которому нужен голос?','Open Audiorec':'Открыть Audiorec','audiorec.app · Chrome or Edge recommended':'audiorec.app · Рекомендуются Chrome или Edge',
+      'Preview of the Audiorec editor while recording':'Предпросмотр редактора Audiorec во время записи','Record your voice over any video, right in the browser. Multi-track timeline, frame-accurate ruler, WAV export. Free, no sign-up, nothing uploaded.':'Записывайте голос поверх видео в браузере. Многодорожечная шкала, точность до кадра и экспорт WAV. Бесплатно, без аккаунта и загрузки файлов.',
+      hero:'Записывайте голос <em>поверх любого видео</em> прямо в браузере.',lead:'Загрузите видео, нажмите <strong>Записать</strong> и говорите во время воспроизведения. Записи появятся на многодорожечной шкале: обрезайте, перемещайте и микшируйте их, затем экспортируйте WAV с точной синхронизацией по кадрам.',
+      'step-record':'Включите <strong>REC</strong> на дорожке и нажмите <kbd>*</kbd>. Запись появится в реальном времени, а индикатор покажет слишком тихий или перегруженный звук.',frames:'Время отображается как <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>. Увеличьте масштаб до одной секунды.',projects:'Работа автоматически сохраняется в браузере. Сохраните файл <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span>, чтобы перенести проект на другой компьютер.',
+      'shortcut-play':'Воспроизвести / пауза <kbd>Space</kbd>','shortcut-record':'Начать / остановить запись <kbd>*</kbd>','shortcut-fullscreen':'Полный экран <kbd>W</kbd>','shortcut-zoom':'Увеличить / уменьшить <span><kbd>+</kbd> <kbd>-</kbd></span>','shortcut-delete':'Удалить выбранные клипы <kbd>Del</kbd>','shortcut-undo':'Отменить / повторить <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span>'
+    },
+    zh: {
+      'Voice-over in the browser':'浏览器中的配音工具','Language':'语言','How it works':'使用方法','Features':'功能','Shortcuts':'快捷键','Open app':'打开应用','Free · no install · no sign-up':'免费 · 无需安装 · 无需注册',
+      'Start recording':'开始录音','See how it works':'了解使用方法','Works best in Chrome or Edge on desktop. Your video and recordings never leave your computer.':'建议在桌面版 Chrome 或 Edge 中使用。视频和录音始终保留在本机。',
+      'Stop':'停止','Monitor':'监听','Length 01:00':'时长 01:00','Narration':'旁白','Second voice':'第二人声','Music':'音乐','Recording…':'录音中…',
+      'From silent clip to finished narration in three steps.':'只需三步，为视频完成配音。','Choose a video':'选择视频','Open any MP4, MOV or WebM file. Audiorec reads its frame rate, so the timeline counts in minutes, seconds and frames.':'打开 MP4、MOV 或 WebM 文件。Audiorec 会读取帧率，在时间线上显示分、秒和帧。',
+      'Record while it plays':'边播放边录音','Edit and export':'编辑并导出',"Trim, move and duplicate clips, set each track's volume, then export a WAV exactly as long as the timeline, ready to drop into your video editor.":'修剪、移动或复制片段，调整各音轨音量，然后导出与时间线等长的 WAV 文件，用于视频剪辑。',
+      'A small studio, without the setup.':'无需复杂设置的小型录音室。','Multi-track timeline':'多音轨时间线','Separate tracks for each voice or for music, each with its own color, volume and mute.':'为不同人声或音乐使用独立音轨，每条音轨都能设置颜色、音量和静音。',
+      'Frame-accurate ruler':'精确到帧的标尺','Hear yourself live':'实时监听','Turn on Monitor to listen to the microphone in your headphones while you record.':'录音时开启监听，通过耳机听取麦克风声音。','Bring your own audio':'导入自己的音频','Drag music or sound files onto a track and place them exactly where they belong.':'将音乐或音效文件拖到音轨上的指定位置。',
+      'Undo everything':'随时撤销','Every move, trim, delete and rename can be undone and redone.':'移动、修剪、删除和重命名操作都可以撤销或重做。','Projects that keep':'项目自动保存',
+      'Keep your hands on the keyboard.':'用键盘轻松操作。','Private by design':'保护隐私','Nothing is uploaded. Ever.':'文件永不上传。','Audiorec runs entirely in your browser. There is no account and no server storing your files: the video, your voice and your projects stay on your own computer.':'Audiorec 完全在浏览器中运行。无需账户，也没有服务器保存文件：视频、录音和项目都留在您的电脑上。',
+      'No sign-up, no account':'无需注册或账户','Files stay on your device':'文件保存在本机','Export as standard 16-bit WAV':'导出标准 16 位 WAV','Free to use':'免费使用','Got a video that needs a voice?':'想为视频添加配音？','Open Audiorec':'打开 Audiorec','audiorec.app · Chrome or Edge recommended':'audiorec.app · 建议使用 Chrome 或 Edge',
+      'Preview of the Audiorec editor while recording':'Audiorec 录音时的编辑器预览','Record your voice over any video, right in the browser. Multi-track timeline, frame-accurate ruler, WAV export. Free, no sign-up, nothing uploaded.':'在浏览器中为任意视频录制配音。多音轨时间线、精确到帧的标尺和 WAV 导出。免费、无需注册、文件不上传。',
+      hero:'直接在浏览器中<em>为任意视频配音</em>。',lead:'加载视频，点击<strong>录音</strong>并在播放时讲话。录音会出现在多音轨时间线上；修剪、移动和混音后，导出与视频逐帧同步的 WAV 文件。',
+      'step-record':'在音轨上开启 <strong>REC</strong>，按 <kbd>*</kbd> 开始录音。录音会实时显示，电平表会提示音量过低或削波。',frames:'时间显示为 <span style="font-family:var(--mono);color:var(--accent-2)">mm:ss:ff</span>。缩放时间线，最小可显示一秒。',projects:'工作会自动保存在浏览器中。保存 <span style="font-family:var(--mono);color:var(--accent-2)">.audiorec</span> 文件，即可在另一台电脑上继续编辑。',
+      'shortcut-play':'播放 / 暂停 <kbd>Space</kbd>','shortcut-record':'开始 / 停止录音 <kbd>*</kbd>','shortcut-fullscreen':'视频全屏 <kbd>W</kbd>','shortcut-zoom':'放大 / 缩小 <span><kbd>+</kbd> <kbd>-</kbd></span>','shortcut-delete':'删除选中片段 <kbd>Del</kbd>','shortcut-undo':'撤销 / 重做 <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span>'
+    },
+  };
+  const select = document.getElementById('language');
+  const supported = ['en', ...Object.keys(LANDING)];
+  const base = code => code?.toLowerCase().split('-')[0];
+  let saved = null;
+  try { saved = localStorage.getItem('audiorec-language'); } catch {}
+  const language = [saved, ...(navigator.languages || [navigator.language])].map(base).find(code => supported.includes(code)) || 'en';
+  const original = new Map();
+  const normalize = text => text.replace(/\s+/g, ' ').trim();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: node => node.parentElement.closest('svg, script, style, select, [data-landing-key], [translate="no"]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  for (let node; (node = walker.nextNode());) { const key = normalize(node.data); if (key) original.set(node, { key, english: node.data }); }
+  const attrs = [...document.querySelectorAll('[aria-label], meta[name="description"]')].map(element => [element, element.hasAttribute('aria-label') ? 'aria-label' : 'content', element.getAttribute(element.hasAttribute('aria-label') ? 'aria-label' : 'content')]);
+  const title = document.title;
+  function render(code) {
+    const strings = LANDING[code] || {};
+    document.documentElement.lang = code;
+    document.title = code === 'en' ? title : `Audiorec · ${strings['Voice-over in the browser']}`;
+    select.value = code;
+    for (const [node, { key, english }] of original) node.data = english.replace(english.trim(), strings[key] || key);
+    for (const [element, name, key] of attrs) element.setAttribute(name, strings[key] || key);
+    for (const element of document.querySelectorAll('[data-landing-key]')) {
+      const english = element.dataset.english || (element.dataset.english = element.innerHTML);
+      element.innerHTML = strings[element.dataset.landingKey] || english;
+    }
+  }
+  render(language);
+  select.addEventListener('change', () => { const code = select.value; try { localStorage.setItem('audiorec-language', code); } catch {} render(code); });
   const rand = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   function wave(canvas) {
     const box = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1;

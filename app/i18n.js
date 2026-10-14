@@ -60,7 +60,7 @@ const I18N = (() => {
     register(code, name, strings, html = {}) { locales[code] = { name, strings, html }; },
     languages: () => [['en', 'English'], ...Object.entries(locales).map(([code, locale]) => [code, locale.name])],
     get language() { return current(); },
-    setLanguage(code) { try { localStorage.setItem('audiorec-language', code); } catch {} location.reload(); },
+    setLanguage(code) { if (code !== 'en' && !locales[code]) return; language = code; try { localStorage.setItem('audiorec-language', code); } catch {} location.reload(); },
     sourceOf: text => sources.get(text) ?? text,
     tr, trn, translatePage,
   };
