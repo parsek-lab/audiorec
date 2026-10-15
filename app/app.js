@@ -1580,8 +1580,8 @@ async function runExport() {
   }
 }
 function openExportControls() { $('export-kind-video').disabled = videoDuration() <= 0 || !canExportVideo; updateExportDialog(); }
-$('video-file').onchange = event => {
-  const file = event.target.files[0]; if (!file) return;
+function loadVideo(file) {
+  if (!file) return;
   stopOvertime(); cursor = null;
   if (recording) finishRecording(); stopPlayback();
   if (videoURL) URL.revokeObjectURL(videoURL);
@@ -1589,7 +1589,8 @@ $('video-file').onchange = event => {
   videoURL = URL.createObjectURL(file); video.src = videoURL;
   saveProject();
   showVideoName(file.name); status(tr('Video loaded. Press Play or Record.'));
-};
+}
+$('video-file').onchange = event => loadVideo(event.target.files[0]);
 function showVideoName(name) {
   $('video-name').textContent = name || tr('Choose video');
   $('video-picker').classList.toggle('primary', !name);
@@ -1631,20 +1632,37 @@ $('import-audio').onclick = () => $('import-file').click();
 $('import-file').onchange = event => { const files = [...event.target.files]; event.target.value = ''; importAudio(files); };
 const dropRow = event => [...$('tracks').children].findIndex(row => { const box = row.getBoundingClientRect(); return event.clientY >= box.top && event.clientY < box.bottom; });
 const hasFiles = event => [...(event.dataTransfer?.types || [])].includes('Files');
-$('timeline-scroll').addEventListener('dragover', event => {
-  if (!hasFiles(event) || recording) return;
-  event.preventDefault(); event.dataTransfer.dropEffect = 'copy';
-  const index = dropRow(event);
+const isAudioFile = file => file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|ogg|oga|opus|flac|webm|aif|aiff)$/i.test(file.name);
+const isVideoFile = file => file.type.startsWith('video/');
+function clearFileDrag() {
+  $('file-drop').hidden = true;
+  [...$('tracks').children].forEach(row => row.classList.remove('drop-target'));
+}
+window.addEventListener('dragenter', event => { if (hasFiles(event) && !restoring) $('file-drop').hidden = false; });
+window.addEventListener('dragover', event => {
+  event.preventDefault();
+  if (!hasFiles(event)) return;
+  event.dataTransfer.dropEffect = restoring ? 'none' : 'copy';
+  $('file-drop').hidden = restoring;
+  const index = !restoring && !recording && $('timeline-scroll').contains(event.target) ? dropRow(event) : -1;
   [...$('tracks').children].forEach((row, i) => row.classList.toggle('drop-target', i === index));
 });
-$('timeline-scroll').addEventListener('dragleave', event => { if (!$('timeline-scroll').contains(event.relatedTarget)) [...$('tracks').children].forEach(row => row.classList.remove('drop-target')); });
-$('timeline-scroll').addEventListener('drop', event => {
-  if (!hasFiles(event)) return;
+window.addEventListener('dragleave', event => { if (!event.relatedTarget || !document.documentElement.contains(event.relatedTarget)) clearFileDrag(); });
+window.addEventListener('drop', event => {
   event.preventDefault();
-  [...$('tracks').children].forEach(row => row.classList.remove('drop-target'));
-  const index = dropRow(event), files = [...event.dataTransfer.files].filter(file => file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|ogg|oga|opus|flac|webm|aif|aiff)$/i.test(file.name));
-  if (index < 0 || !files.length) { status(tr('Could not import: drop audio files on a track.')); return; }
-  importAudio(files, tracks[index], (event.clientX - $('timeline').getBoundingClientRect().left) / pxPerSecond);
+  const index = $('timeline-scroll').contains(event.target) ? dropRow(event) : -1;
+  clearFileDrag();
+  if (!hasFiles(event) || restoring) return;
+  const files = [...event.dataTransfer.files], file = files.find(f => isAudioFile(f) || isVideoFile(f));
+  if (!file) { status(tr('Could not import: unsupported audio or video file.')); return; }
+  if (recording) { status(tr('Stop recording before importing files.')); return; }
+  const ignored = files.length - 1;
+  if (isVideoFile(file) && !isAudioFile(file)) {
+    loadVideo(file);
+    if (ignored) status(tr('{file} selected; {count} other files ignored.', { file: file.name, count: ignored }));
+  } else importAudio([file], index >= 0 ? tracks[index] : undefined, index >= 0 ? (event.clientX - $('timeline').getBoundingClientRect().left) / pxPerSecond : playPosition()).then(() => {
+    if (ignored) status(tr('{file} selected; {count} other files ignored.', { file: file.name, count: ignored }));
+  });
 });
 $('undo').onclick = undo;
 $('redo').onclick = redo;
