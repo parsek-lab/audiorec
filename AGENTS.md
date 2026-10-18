@@ -11,7 +11,8 @@ Guidance for coding agents working on Audiorec. User-facing docs are in `README.
 
 ## Running and verifying
 
-1. Syntax check: `node --check app/app.js`
+1. Syntax check: `node --check app/app.js` (and `app/theme.js`)
+   Checks (Node, no dependencies): `node tools/check-it.mjs` (locales; update its string count when UI strings change) and `node tools/check-theme.mjs` (themes).
 2. Serve locally (mic needs localhost/HTTPS): `npx serve .` or `python -m http.server 8000`, then open `/app/`
 3. Check the change in a Chromium browser. Real microphone tests cannot be automated; say so explicitly when reporting.
 
@@ -39,8 +40,10 @@ There is no test suite. Report what was verified and what was not.
 
 ## UI conventions (`index.html`, `style.css`)
 
-- Dark theme with CSS tokens on `:root` (`--accent`, `--rec`, `--raised`, …). Use tokens, not raw colors.
-- Explanations live in info popovers (`.tip` + `.info-button` with `popovertarget`), not inline text. Update the relevant tip when behavior changes.
+- Themes: `app/theme.js` stores the MODE (`system|dark|light|accessible`, localStorage `audiorec-theme`, missing/invalid = system) and writes the SCHEME to `<html data-theme>`; only System follows OS changes. Never persist the theme in the project, IndexedDB or `.audiorec`.
+- Colors are CSS tokens: `:root` (Dark, the original palette), `:root[data-theme=light]`, `:root[data-theme=accessible]`. Components use `var(--…)` only, never raw colors; a new token must be defined in all three blocks (`check-theme.mjs` enforces it). Canvas waveforms read `--wave`, `--wave-video`, `--wave-rec` via `themeColor()`; a scheme change re-renders tracks.
+- Accessible theme: any new state needs a non-color cue there too (shape, pattern or text), and focus must stay visible. Respect `prefers-reduced-motion`.
+- Explanations live in the Help dialog (`#help-dialog`, opened from the main menu), one tab per topic (`help-files`, `help-recording`, `help-tracks` panels), not inline text. Update the relevant panel when behavior changes; a new topic needs a tab, a panel and its `aria-controls`.
 - Buttons that need the project loaded are disabled until `restoreProject()` finishes; add new ones to both ID lists in `app.js` (end of `restoreProject` and the line before `restoreProject()` is called).
 
 ## Recording pipeline

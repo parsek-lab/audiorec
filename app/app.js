@@ -288,7 +288,7 @@ async function restoreProject() {
     status(tr('Local storage unavailable: {message}', { message: error.message }));
   } finally {
     restoring = false; clearHistory(); renderTracks();
-    for (const id of ['video-file', 'add-track', 'import-audio', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
+    for (const id of ['video-file', 'add-track', 'import-audio', 'clip-import', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
   }
 }
 function formatSpan(seconds) {
@@ -600,7 +600,7 @@ function renderClipList() {
     item.className = `clip-item${track.muted || clip.muted ? ' muted-clip' : ''}${selectedClips.has(clip) ? ' selected' : ''}`;
     item.style.setProperty('--track-color', trackColor(track));
     item.title = tr('{name}: go to its start and select it (Shift+click to add to the selection) · Rename (double-click)', { name: clip.name || tr('Clip') });
-    const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || tr('Clip');
+    const name = document.createElement('span'); name.className = 'clip-item-name'; name.textContent = clip.name || tr('Clip'); if (track.muted || clip.muted) name.dataset.state = tr('muted');
     const time = document.createElement('span'); time.className = 'clip-item-time'; time.textContent = formatTime(clip.start);
     const meta = document.createElement('span'); meta.className = 'clip-item-meta'; meta.textContent = `${track.name} · ${clipDuration(clip).toFixed(1)} s`;
     const download = document.createElement('button'); download.type = 'button'; download.className = 'clip-download ghost';
@@ -744,6 +744,8 @@ async function addTrack() {
   tracks.push(track); armTrack(track);
   renderTracks(); saveProject(); status(tr('Track added: {name}.', { name }));
 }
+// Waveform colors are theme tokens (--wave, --wave-video, --wave-rec in style.css), read when a canvas is drawn.
+const themeColor = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 function drawWaveform(clip) {
   const width = Math.ceil(clip.buffer.duration * pxPerSecond), height = 44;
   if (width < 1) return null;
@@ -751,7 +753,7 @@ function drawWaveform(clip) {
   canvas.className = 'clip-wave'; canvas.width = Math.min(16000, Math.ceil(width * ratio)); canvas.height = Math.ceil(height * ratio);
   canvas.style.width = `${width}px`; canvas.style.left = `${-(clip.trimStart || 0) * pxPerSecond}px`;
   const g = canvas.getContext('2d'), data = channel(clip.buffer), step = data.length / canvas.width, middle = canvas.height / 2;
-  g.fillStyle = 'rgba(230,235,255,.75)';
+  g.fillStyle = themeColor('--wave');
   for (let x = 0; x < canvas.width; x++) {
     let peak = 0;
     for (let i = Math.floor(x * step), end = Math.min(data.length, Math.floor((x + 1) * step)); i < end; i++) peak = Math.max(peak, Math.abs(data[i]));
@@ -802,6 +804,7 @@ function drawVideoWave() {
   const last = Math.min(Math.ceil(total / VIDEO_SEGMENT) - 1, Math.floor((scroller.scrollLeft + 2 * scroller.clientWidth) / VIDEO_SEGMENT));
   for (const [index, canvas] of videoWave.segments) if (index < first - 2 || index > last + 2) { canvas.remove(); videoWave.segments.delete(index); }
   const ratio = window.devicePixelRatio || 1, height = lane.clientHeight || 60;
+  const fill = themeColor('--wave-video');
   for (let index = first; index <= last; index++) {
     if (videoWave.segments.has(index)) continue;
     const left = index * VIDEO_SEGMENT, width = Math.min(VIDEO_SEGMENT, total - left);
@@ -809,7 +812,7 @@ function drawVideoWave() {
     canvas.width = Math.ceil(width * ratio); canvas.height = Math.ceil(height * ratio);
     canvas.style.left = `${left}px`; canvas.style.width = `${width}px`;
     const g = canvas.getContext('2d'), middle = canvas.height / 2, perPixel = PEAK_RATE / pxPerSecond / ratio;
-    g.fillStyle = 'rgba(160,172,200,.6)';
+    g.fillStyle = fill;
     for (let x = 0; x < canvas.width; x++) {
       const from = (left * ratio + x) * perPixel, to = Math.max(Math.floor(from) + 1, Math.floor(from + perPixel));
       let peak = 0;
@@ -942,6 +945,7 @@ function renderTracks() {
       const wave = drawWaveform(clip);
       if (wave) block.append(wave);
       const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = clip.name || tr('Clip'); block.append(label);
+      if (track.muted || clip.muted) label.dataset.state = tr('muted');
       for (const side of ['left', 'right']) {
         const handle = document.createElement('span'); handle.className = `clip-handle ${side}`;
         handle.setAttribute('aria-label', side === 'left' ? tr('Edit clip start') : tr('Edit clip end'));
@@ -982,7 +986,7 @@ function updateRecordingPreview() {
       if (!(peaks[column] >= value)) peaks[column] = value;
     }
   }
-  const ratio = window.devicePixelRatio || 1, height = 44, middle = height * ratio / 2;
+  const ratio = window.devicePixelRatio || 1, height = 44, middle = height * ratio / 2, fill = themeColor('--wave-rec');
   for (let x = Math.max(0, preview.drawn - 1); x < peaks.length; x++) {
     const index = Math.floor(x / PREVIEW_SEGMENT);
     let canvas = preview.segments[index];
@@ -993,7 +997,7 @@ function updateRecordingPreview() {
       preview.element.prepend(canvas); preview.segments[index] = canvas;
     }
     const g = canvas.getContext('2d'), bar = Math.max(ratio / 2, Math.min(1, (peaks[x] || 0) * 1.6) * middle * .85);
-    g.fillStyle = 'rgba(255,235,240,.8)'; g.clearRect((x % PREVIEW_SEGMENT) * ratio, 0, ratio, height * ratio); g.fillRect((x % PREVIEW_SEGMENT) * ratio, middle - bar, ratio, bar * 2);
+    g.fillStyle = fill; g.clearRect((x % PREVIEW_SEGMENT) * ratio, 0, ratio, height * ratio); g.fillRect((x % PREVIEW_SEGMENT) * ratio, middle - bar, ratio, bar * 2);
   }
   preview.drawn = peaks.length;
 }
@@ -1628,7 +1632,7 @@ $('visibility-dialog').addEventListener('click', event => {
   if (event.target === $('visibility-dialog') && box && (event.clientY < box.top || event.clientY > box.bottom || event.clientX < box.left || event.clientX > box.right)) $('visibility-dialog').close();
 });
 $('add-track').onclick = addTrack;
-$('import-audio').onclick = () => $('import-file').click();
+$('import-audio').onclick = $('clip-import').onclick = () => $('import-file').click();
 $('import-file').onchange = event => { const files = [...event.target.files]; event.target.value = ''; importAudio(files); };
 const dropRow = event => [...$('tracks').children].findIndex(row => { const box = row.getBoundingClientRect(); return event.clientY >= box.top && event.clientY < box.bottom; });
 const hasFiles = event => [...(event.dataTransfer?.types || [])].includes('Files');
@@ -1689,13 +1693,27 @@ function anchorPopover(tip, button) {
   tip.style.left = `${left}px`;
   tip.style.top = `${below + tip.offsetHeight > window.innerHeight - 12 && above > 12 ? above : below}px`;
 }
-// Info boxes are modal dialogs: open from their (i) button, close with the X, Esc or a click outside.
-for (const button of document.querySelectorAll('[data-tip]')) button.onclick = () => $(button.dataset.tip).showModal();
+// Help is a modal dialog opened from the main menu, one tab per topic; close with the X, Esc or a click outside.
+// Tabs follow the WAI-ARIA pattern: only the selected tab is in the Tab order, arrows / Home / End move between tabs.
+const helpTabs = [...document.querySelectorAll('#help-dialog [role="tab"]')];
+function showHelpTab(tab, focus) {
+  for (const other of helpTabs) { const selected = other === tab; other.setAttribute('aria-selected', selected); other.tabIndex = selected ? 0 : -1; $(other.getAttribute('aria-controls')).hidden = !selected; }
+  if (focus) tab.focus();
+}
+for (const tab of helpTabs) {
+  tab.onclick = () => showHelpTab(tab);
+  tab.onkeydown = event => {
+    const index = helpTabs.indexOf(tab), next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: helpTabs.length - 1 }[event.key];
+    if (next === undefined) return; event.preventDefault(); showHelpTab(helpTabs.at(next % helpTabs.length), true);
+  };
+}
+$('open-help').onclick = () => { $('help-dialog').showModal(); helpTabs.find(tab => tab.getAttribute('aria-selected') === 'true').focus(); };
 for (const tip of document.querySelectorAll('dialog.tip')) {
   tip.querySelector('.tip-close').onclick = () => tip.close();
-  tip.addEventListener('click', event => { const box = tip.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) tip.close(); });
+  // Only a click on the backdrop targets the dialog itself; clicks without coordinates (element.click()) report (0, 0).
+  tip.addEventListener('click', event => { const box = tip.getBoundingClientRect(); if (event.target === tip && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) tip.close(); });
 }
-for (const tip of document.querySelectorAll('#project-menu, #language-menu')) tip.addEventListener('toggle', event => {
+for (const tip of document.querySelectorAll('#project-menu, #language-menu, #theme-menu')) tip.addEventListener('toggle', event => {
   const button = document.querySelector(`[popovertarget="${tip.id}"]`);
   button.classList.toggle('open', event.newState === 'open');
   if (event.newState === 'open') anchorPopover(tip, button);
@@ -1709,7 +1727,25 @@ $('language-options').replaceChildren(...I18N.languages().map(([code, name]) => 
   button.onclick = () => I18N.setLanguage(code);
   return button;
 }));
-$('language-button').setAttribute('aria-label', tr('Language'));
+// The toggle shows the current language by its own name; tooltip and accessible name keep the word "Language".
+const languageLabel = I18N.languages().find(([code]) => code === I18N.language)?.[1] || 'English';
+$('language-button').lastElementChild.textContent = languageLabel; $('language-button').title = $('language-button').ariaLabel = `${tr('Language')}: ${languageLabel}`;
+// Theme menu: the saved mode (theme.js) is separate from the scheme it resolves to; System shows what the device asks for.
+const THEME_NAMES = { system: () => tr('System'), dark: () => tr('Dark'), light: () => tr('Light'), accessible: () => tr('Accessible') };
+function renderThemeMenu() {
+  $('theme-options').replaceChildren(...THEME.MODES.map(mode => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'menu-item theme-option'; button.dataset.themeOption = mode;
+    const name = document.createElement('span'); name.textContent = THEME_NAMES[mode](); button.append(name);
+    const hint = mode === 'system' ? tr('Now: {theme}', { theme: THEME_NAMES[THEME.scheme]() }) : mode === 'accessible' ? tr('High contrast, clear focus, labeled states') : '';
+    if (hint) { const note = document.createElement('span'); note.className = 'theme-option-hint'; note.textContent = hint; button.append(note); }
+    if (mode === THEME.mode) button.setAttribute('aria-current', 'true');
+    button.onclick = () => { $('theme-menu').hidePopover(); THEME.setMode(mode); status(tr('Theme: {theme}.', { theme: THEME_NAMES[mode]() })); };
+    return button;
+  }));
+}
+renderThemeMenu();
+// A new scheme redraws the canvases (waveforms) with its colors; tracks and project data are not touched.
+THEME.onChange((scheme, mode, changed) => { renderThemeMenu(); if (changed) { videoWave.scale = 0; renderTracks(); } });
 $('input-meter').onclick = () => { if (!recording) $('test-mic').click(); };
 $('monitor').onclick = toggleMonitor;
 $('enhanced-audio').onclick = toggleEnhancedAudio;
@@ -1871,7 +1907,7 @@ video.addEventListener('ended', () => {
   if (recording) finishRecording(); stopPlayback(); stopPlayhead();
 });
 navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
-for (const id of ['video-file', 'add-track', 'import-audio', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
+for (const id of ['video-file', 'add-track', 'import-audio', 'clip-import', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
 // An AudioContext created before any click starts suspended (e.g. when restoring a boosted video volume).
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
 // Custom tooltips: every title attribute (static or set later by code) moves to data-tooltip, so the native tooltip never

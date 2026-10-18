@@ -19,13 +19,15 @@ Live at https://audiorec.app (Cloudflare Pages). The landing page is at `/`, the
 ## Features
 
 - **Video playback** with mute and volume (−∞ to +10 dB) for the original audio (included in the export only if chosen). The video's own audio is drawn as a read-only waveform row above the tracks.
-- **Multi-track recording**: arm one or more tracks with **REC**, press **Record**, speak while the video plays. Every armed track gets the same take.
+- **Multi-track recording**: put **REC** on the track to record on (one track at a time; clicking REC on another track moves it), press **Record**, speak while the timeline plays (over the video, if one is chosen). Pausing or seeking stops the recording.
 - **Timeline editing**: drag clips to move them, drag their edges to trim, cut the selected clips at the playhead (scissors button or <kbd>C</kbd>), mute them so they stay out of playback and export (speaker button or <kbd>M</kbd>), delete them (trash button or <kbd>Del</kbd>), double-click to rename clips and tracks. Import audio files (button, or drag them from your computer onto a track); stereo files are mixed down to mono. Click a clip to select it (Shift+click for more) and press Del to remove the selection. Ctrl+Z undoes and Ctrl+Shift+Z / Ctrl+Y redoes every track and clip change (history resets on New/Open project). The ruler and time display read minutes:seconds:frames, with the frame rate read from the video file (MP4/MOV/WebM; otherwise measured during playback, 25 fps until then). Dragging the playhead to a timeline edge scrolls, accelerating the longer you hold. Zoom with the slider (fully left: whole video; fully right: 1 second visible), `+` / `-`, or Ctrl + mouse wheel.
-- **Clip list** next to the video: every clip in timeline order, with track, start time and length. Click one to jump to its start and select it (Shift+click adds to the selection), double-click to rename it. Each clip has a WAV download button (trimmed, with the playback fades, without the track volume); the heading downloads all clips as one ZIP of WAV files and can collapse the list.
+- **Clip list** next to the video: every clip in timeline order, with track, start time and length. Click one to jump to its start and select it (Shift+click adds to the selection), double-click to rename it. Each clip has a WAV download button (trimmed, with the playback fades, without the track volume); the heading imports audio files (like the import button above the track names), downloads all clips as one ZIP of WAV files and can collapse the list.
 - **View kept across reloads** (in this browser): selected clips, zoom, timeline scroll and playhead position.
 - **Scrubbing**: click or drag the ruler to seek; the playhead stays centered while playing.
 - **Clean edits**: 5 ms fade-in/out on every clip, in playback and export.
 - **Mic test & level meter** in the settings dialog, with an **Enhanced audio** toggle (browser echo cancellation, noise suppression and auto gain; off by default), plus input/output device selection (output selection depends on browser support for `setSinkId`).
+- **Themes** (header → **Theme**, next to Language): **System** (default: follows the device's light/dark setting, live), **Dark** (the original look), **Light** and **Accessible**. Accessible is a high-contrast black theme with blue / yellow / vermilion state colors, a 3 px yellow focus outline, states also shown without color (✓ badge on active REC / Mute, hatched and dashed muted clips labelled "muted", dashed recording clip, "!" on error status) and no decorative animation. Its palette was checked with WCAG contrast ratios and a color-vision simulation, not with color-vision-deficient users. Every theme honours the OS *reduce motion* setting. The choice is a per-browser preference (`audiorec-theme` in localStorage); it is not part of the project, its autosave or `.audiorec` files, and track colors are never changed by a theme. Applies to the app only; the landing page stays dark.
+- **Help** (Menu → Help): one dialog with a tab per topic — Saving & exporting, Recording, Editing tracks (arrow keys switch tabs).
 - **Autosave** of video and recordings in IndexedDB — survives a page refresh.
 - **Project files** (`.audiorec`): save/open the full project (video + recordings). With the File System Access API, later saves overwrite the same file; otherwise the file is downloaded.
 - **Export markers**: two draggable handles on the ruler (start and end) delimit the export; <kbd>I</kbd> / <kbd>O</kbd> place them at the playhead, double-click resets one. They snap to frames, the playhead, clip edges and the timeline length, and are saved with the project and in undo.
@@ -53,12 +55,15 @@ Recording stops automatically when the video is paused, seeked or ends. Recorded
 | File | Contents |
 | --- | --- |
 | `index.html` | Landing page (self-contained: inline CSS, SVG and script) |
-| `app/index.html` | Markup, inline SVG icon library, info popovers, device dialog |
-| `app/style.css` | Dark theme, design tokens on `:root` |
+| `app/index.html` | Markup, inline SVG icon library, Help dialog, device dialog |
+| `app/style.css` | Design tokens per theme (`:root` = Dark, `[data-theme=light]`, `[data-theme=accessible]`), then components using tokens only |
+| `app/theme.js` | Theme mode (System / Dark / Light / Accessible) → `<html data-theme>`; loaded in `<head>` so there is no flash |
 | `app/app.js` | All logic: recording, timeline, playback, persistence, export |
 | `app/i18n.js` | Interface translation: language choice, `tr()` / `trn()`, page translation |
 | `app/locales/<code>.js` | One file per translated language (none yet) |
 | `tools/i18n.mjs` | Translation helper: creates, updates and checks the locale files (Node, no dependencies) |
+| `tools/check-it.mjs` | Locale coverage and integrity check: `node tools/check-it.mjs` |
+| `tools/check-theme.mjs` | Theme checks: mode/scheme logic, OS sync, token completeness, contrast and color-vision heuristics, wiring: `node tools/check-theme.mjs` (`--report` prints the ratios) |
 
 ## Translations
 
