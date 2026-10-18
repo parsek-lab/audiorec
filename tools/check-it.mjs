@@ -28,8 +28,9 @@ assert.match(source, /id="language-options"/);
 assert.doesNotMatch(source, /id="language-field"|id="language"/);
 assert.match(js, /language-options'\)\.replaceChildren\(\.\.\.I18N\.languages\(\)/);
 assert.match(js, /button\.onclick = \(\) => I18N\.setLanguage\(code\)/);
-assert.match(landing, /<header class="topbar">[\s\S]*?<select id="language" aria-label="Language">/);
-assert.deepEqual([...landing.matchAll(/<option value="([a-z]+)">/g)].map(([,code])=>code),['en','it','es','ru','zh']);
+assert.match(landing, /<header class="topbar">[\s\S]*?<button id="language-button"[^>]*popovertarget="language-menu"[\s\S]*?<div id="language-menu" class="menu" popover aria-label="Language"><span class="menu-label">Language<\/span>/);
+assert.doesNotMatch(landing, /<select id="language"/);
+assert.deepEqual([...landing.matchAll(/<button class="menu-item" type="button" lang="([a-z]+)" data-language="\1" translate="no">/g)].map(([,code])=>code),['en','it','es','ru','zh']);
 assert.match(landing, /localStorage\.getItem\('audiorec-language'\)/);
 assert.match(landing, /localStorage\.setItem\('audiorec-language', code\)/);
 assert.match(readFileSync('app/i18n.js','utf8'), /localStorage\.getItem\('audiorec-language'\)/);
@@ -64,7 +65,7 @@ console.log(`OK ${code}: ${keys.size} strings, ${blocks.size} HTML blocks, ${plu
 }
 const landingScript=landing.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(landingScript,'landing inline script');
-const table=vm.runInNewContext('('+landingScript.match(/const LANDING = (\{[\s\S]*?\});\s*const select/)?.[1]+')');
+const table=vm.runInNewContext('('+landingScript.match(/const LANDING = (\{[\s\S]*?\});\s*const button/)?.[1]+')');
 const landingKeys=Object.keys(table.it);
 for(const code of Object.keys(names)) {
   assert.deepEqual(Object.keys(table[code]).sort(),landingKeys.sort(),code+' landing keys');

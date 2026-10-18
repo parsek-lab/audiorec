@@ -41,9 +41,17 @@ kbd{font:500 .78rem var(--mono);padding:2px 7px;border-radius:6px;background:var
 .brand-name{font-size:1.2rem;font-weight:700;letter-spacing:-.03em;color:var(--text)}
 .brand-sub{font-size:.78rem;color:var(--subtle)}
 .nav{display:flex;align-items:center;gap:4px;min-width:0}
-.language-control{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:var(--subtle);font-size:.82rem}
-.language-control select{min-height:36px;max-width:116px;padding:6px 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--raised);color:var(--text);font:500 .82rem var(--font);cursor:pointer}
-.language-control select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Language: same button + popover menu as the app header (translate icon, current language name, ✓ on the current one). */
+.language-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:none;padding:8px 11px;font:500 .85rem/1.2 var(--font);color:var(--text);background:var(--raised);border:1px solid var(--line-strong);border-radius:var(--radius-sm);white-space:nowrap;cursor:pointer}
+.language-button:hover,.language-button.open{background:var(--raised-hover)}
+.language-button:focus-visible,.menu-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.menu{position:fixed;inset:auto;margin:0;min-width:190px;padding:6px;display:none;gap:2px;background:var(--surface-solid);color:var(--text);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.menu:popover-open{display:grid;animation:menu-in .15s ease-out}
+@keyframes menu-in{from{opacity:0;transform:translateY(-4px)}}
+.menu-label{padding:4px 10px 2px;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.menu-item{display:flex;align-items:center;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text);font:500 .85rem/1.2 var(--font);text-align:left;cursor:pointer}
+.menu-item:hover{background:var(--raised)}
+.menu-item[aria-current=true]{color:var(--accent-2);background:var(--raised)}.menu-item[aria-current=true]::after{content:"✓"/"";margin-left:auto;padding-left:12px;font-weight:700}
 .nav a.link{color:var(--subtle);text-decoration:none;font-size:.88rem;font-weight:500;padding:8px 12px;border-radius:var(--radius-sm)}
 .nav a.link:hover{color:var(--text);background:var(--raised)}
 
@@ -128,7 +136,7 @@ footer span{font-family:var(--mono)}
   .brand-sub{display:none}
   .brand{gap:6px}.brand-name{font-size:1rem}.logo{width:34px;height:34px}
   .topbar{gap:6px;padding:8px}
-  .language-control span{display:none}.language-control select{max-width:90px}
+  .language-button span{display:none}.language-button{width:38px;height:38px;padding:0}
   .nav .small{padding:8px 10px}
   .private{grid-template-columns:1fr}
   .mock-video{aspect-ratio:16/9}
@@ -157,7 +165,7 @@ footer span{font-family:var(--mono)}
 <div class="wrap">
   <header class="topbar">
     <div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="logo-wave" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="64" y2="64"><stop offset="0" stop-color="#8b7bff"/><stop offset=".55" stop-color="#5b8cff"/><stop offset="1" stop-color="#4fd1ff"/></linearGradient><linearGradient id="logo-dot" gradientUnits="userSpaceOnUse" x1="14" y1="22" x2="34" y2="42"><stop offset="0" stop-color="#ff5f7e"/><stop offset="1" stop-color="#e0294f"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#141824"/><rect x=".75" y=".75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#94a3c8" stroke-opacity=".28" stroke-width="1.5"/><circle cx="24" cy="32" r="10" fill="url(#logo-dot)"/><g fill="none" stroke="url(#logo-wave)" stroke-width="4.5" stroke-linecap="round"><path d="M38 22a14 14 0 0 1 0 20"/><path d="M45 15a24 24 0 0 1 0 34"/></g></svg><div><div class="brand-name">Audiorec</div><div class="brand-sub">Voice-over in the browser</div></div></div>
-    <nav class="nav"><label class="language-control"><span>Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="it">Italiano</option><option value="es">Español</option><option value="ru">Русский</option><option value="zh">简体中文</option></select></label><a class="link" href="#how">How it works</a><a class="link" href="#features">Features</a><a class="link" href="#keys">Shortcuts</a><a class="button primary small" href="app/">Open app</a></nav>
+    <nav class="nav"><button id="language-button" class="language-button" type="button" popovertarget="language-menu"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 6 6m-7 0 6-6 2-3M2 5h12M7 2h1m14 20-5-10-5 10m2-4h6"/></svg><span translate="no">English</span></button><div id="language-menu" class="menu" popover aria-label="Language"><span class="menu-label">Language</span><button class="menu-item" type="button" lang="en" data-language="en" translate="no">English</button><button class="menu-item" type="button" lang="it" data-language="it" translate="no">Italiano</button><button class="menu-item" type="button" lang="es" data-language="es" translate="no">Español</button><button class="menu-item" type="button" lang="ru" data-language="ru" translate="no">Русский</button><button class="menu-item" type="button" lang="zh" data-language="zh" translate="no">简体中文</button></div><a class="link" href="#how">How it works</a><a class="link" href="#features">Features</a><a class="link" href="#keys">Shortcuts</a><a class="button primary small" href="app/">Open app</a></nav>
   </header>
 
   <div class="hero">
@@ -314,7 +322,7 @@ footer span{font-family:var(--mono)}
       'shortcut-play':'播放 / 暂停 <kbd>Space</kbd>','shortcut-record':'开始 / 停止录音 <kbd>*</kbd>','shortcut-fullscreen':'视频全屏 <kbd>W</kbd>','shortcut-zoom':'放大 / 缩小 <span><kbd>+</kbd> <kbd>-</kbd></span>','shortcut-delete':'删除选中片段 <kbd>Del</kbd>','shortcut-undo':'撤销 / 重做 <span><kbd>Ctrl Z</kbd> <kbd>Ctrl Y</kbd></span>'
     },
   };
-  const select = document.getElementById('language');
+  const button = document.getElementById('language-button'), menu = document.getElementById('language-menu'), options = [...menu.querySelectorAll('[data-language]')];
   const supported = ['en', ...Object.keys(LANDING)];
   const base = code => code?.toLowerCase().split('-')[0];
   let saved = null;
@@ -322,7 +330,7 @@ footer span{font-family:var(--mono)}
   const language = [saved, ...(navigator.languages || [navigator.language])].map(base).find(code => supported.includes(code)) || 'en';
   const original = new Map();
   const normalize = text => text.replace(/\s+/g, ' ').trim();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: node => node.parentElement.closest('svg, script, style, select, [data-landing-key], [translate="no"]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: node => node.parentElement.closest('svg, script, style, [data-landing-key], [translate="no"]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
   for (let node; (node = walker.nextNode());) { const key = normalize(node.data); if (key) original.set(node, { key, english: node.data }); }
   const attrs = [...document.querySelectorAll('[aria-label], meta[name="description"]')].map(element => [element, element.hasAttribute('aria-label') ? 'aria-label' : 'content', element.getAttribute(element.hasAttribute('aria-label') ? 'aria-label' : 'content')]);
   const title = document.title;
@@ -330,16 +338,26 @@ footer span{font-family:var(--mono)}
     const strings = LANDING[code] || {};
     document.documentElement.lang = code;
     document.title = code === 'en' ? title : `Audiorec · ${strings['Voice-over in the browser']}`;
-    select.value = code;
+    const languageName = options.find(option => option.dataset.language === code).textContent;
+    button.lastElementChild.textContent = languageName;
+    for (const option of options) if (option.dataset.language === code) option.setAttribute('aria-current', 'true'); else option.removeAttribute('aria-current');
     for (const [node, { key, english }] of original) node.data = english.replace(english.trim(), strings[key] || key);
     for (const [element, name, key] of attrs) element.setAttribute(name, strings[key] || key);
+    button.title = button.ariaLabel = `${strings.Language || 'Language'}: ${languageName}`;
     for (const element of document.querySelectorAll('[data-landing-key]')) {
       const english = element.dataset.english || (element.dataset.english = element.innerHTML);
       element.innerHTML = strings[element.dataset.landingKey] || english;
     }
   }
   render(language);
-  select.addEventListener('change', () => { const code = select.value; try { localStorage.setItem('audiorec-language', code); } catch {} render(code); });
+  for (const option of options) option.addEventListener('click', () => { const code = option.dataset.language; menu.hidePopover(); try { localStorage.setItem('audiorec-language', code); } catch {} render(code); });
+  // Below the button, right-aligned and kept inside the viewport, like the app's header menus.
+  menu.addEventListener('toggle', event => {
+    button.classList.toggle('open', event.newState === 'open');
+    if (event.newState !== 'open') return;
+    const anchor = button.getBoundingClientRect();
+    menu.style.left = `${Math.min(Math.max(12, anchor.right - menu.offsetWidth), innerWidth - menu.offsetWidth - 12)}px`; menu.style.top = `${anchor.bottom + 8}px`;
+  });
   const rand = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   function wave(canvas) {
     const box = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1;
