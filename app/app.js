@@ -29,8 +29,8 @@ function showInputLevel(peak) {
 }
 const video = $('video');
 const tracks = [];
-let context, stream, source, analyser, meterFrame, processor, silentGain, recording = false, nextId = 1, videoURL;
-let playingSources = [];
+let context, stream, source, analyser, meterFrame, recorder = null, recording = false, nextId = 1, videoURL;
+let playingSources = [], playbackRevision = 0, gluing = false;
 const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600], FRAME_STEPS = [1, 2, 3, 5, 6, 10, 12, 15];
 const STANDARD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 100, 119.88, 120];
 let fps = 25;
@@ -217,9 +217,41 @@ function stopPlayhead() {
 const channels = new WeakMap();
 const channel = buffer => { let data = channels.get(buffer); if (!data) channels.set(buffer, data = buffer.getChannelData(0)); return data; };
 const clipDuration = clip => Math.max(0, clip.buffer.duration - (clip.trimStart || 0) - (clip.trimEnd || 0));
-const FADE_SECONDS = .005;
-function fadeGain(position, duration, fade) {
-  return fade > 0 ? Math.max(0, Math.min(1, position / fade, (duration - position) / fade)) : 0;
+// Clip edges fade in and out over 1.5 ms with a raised cosine (sin²): no slope jump at either end, so it splatters less
+// than the former 5 ms linear ramp (about -77 dB against -73 dB above 2 kHz for a cut at a peak) at under a third of the
+// length. Shorter fades bring the click back. Playback, export and clip downloads all use fadeGain.
+const FADE_SECONDS = .0015;
+// Fades of a clip on its track. Where the next clip starts before this one ends and runs past it, the whole overlap is
+// an equal-power crossfade (sin out, sin in: constant loudness for unrelated takes); other edges get the short guard.
+// A clip lying entirely inside another keeps the guard fades and plays over it; muted clips do not count.
+function clipFades(track, clip) {
+  const duration = clipDuration(clip), end = clip.start + duration, guard = Math.min(FADE_SECONDS, duration / 2);
+  const fades = { duration, in: Math.max(guard, clip.fadeIn || 0), out: Math.max(guard, clip.fadeOut || 0), inPower: false, outPower: false };
+  for (const other of track.clips) {
+    if (other === clip || other.muted) continue;
+    const otherEnd = other.start + clipDuration(other);
+    if (other.start < clip.start && otherEnd > clip.start && otherEnd < end && otherEnd - clip.start > fades.in) Object.assign(fades, { in: otherEnd - clip.start, inPower: true });
+    if (other.start > clip.start && other.start < end && otherEnd > end && end - other.start > fades.out) Object.assign(fades, { out: end - other.start, outPower: true });
+  }
+  return fitFades(fades);
+}
+// Fade-in and fade-out longer than the clip together are shortened in proportion.
+function fitFades(fades) { const total = fades.in + fades.out; if (total > fades.duration && total > 0) { fades.in *= fades.duration / total; fades.out *= fades.duration / total; } return fades; }
+// Gain at a clip position: fade-in times fade-out. Guard edges use sin² (no slope jump), crossfades sin (equal power).
+function fadeGain(position, fades) {
+  const shape = (x, power) => { const s = Math.sin(Math.PI / 2 * Math.max(0, Math.min(1, x))); return power ? s : s * s; };
+  return (fades.in > 0 ? shape(position / fades.in, fades.inPower) : 1) * (fades.out > 0 ? shape((fades.duration - position) / fades.out, fades.outPower) : 1);
+}
+// Fades for a clip that starts playing at clip position elapsed. Value curves must not overlap other events, so each
+// curve starts where nothing else is scheduled, and fades that meet (short clips, long crossfades) become one curve.
+function scheduleFades(param, startTime, elapsed, fades) {
+  const duration = fades.duration, curve = (from, to) => { if (to <= from) return; const steps = Math.min(4096, Math.max(32, Math.ceil((to - from) / .002))); param.setValueCurveAtTime(Float32Array.from({ length: steps + 1 }, (_, i) => fadeGain(from + (to - from) * i / steps, fades)), startTime + from - elapsed, to - from); };
+  // The first rendered frame can still read the param's intrinsic value (1) before a curve starting on it: set the
+  // starting gain from time 0 so a clip never opens with one full-volume sample.
+  const fadeOut = Math.max(elapsed, duration - fades.out); param.setValueAtTime(fadeGain(elapsed, fades), 0);
+  if (elapsed >= fadeOut || fades.in >= fadeOut) { curve(elapsed, duration); return; }
+  if (elapsed < fades.in) curve(elapsed, fades.in); else param.setValueAtTime(1, startTime);
+  curve(fadeOut, duration);
 }
 let databasePromise, saveQueue = Promise.resolve(), selectedVideo = null, restoring = true;
 function database() {
@@ -232,8 +264,8 @@ function database() {
 }
 function projectData() {
   return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
-    tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, visible: t.visible !== false, volume: t.volume ?? 1, color: trackColor(t),
-      clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted,
+    tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, visible: t.visible !== false, volume: t.volume ?? 1, color: trackColor(t), effects: copyEffects(t),
+      pan: t.pan ?? 0, clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted, gain: c.gain ?? 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0,
         sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
 }
 function saveProject() {
@@ -267,9 +299,9 @@ async function restoreProject() {
         const clips = saved.clips.map(c => {
           const buffer = audio.createBuffer(1, c.samples.length, c.sampleRate);
           buffer.copyToChannel(c.samples, 0);
-          return { name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, buffer };
+          return { name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, gain: validVolume(c.gain) ? c.gain : 1, fadeIn: validFade(c.fadeIn) ? c.fadeIn : 0, fadeOut: validFade(c.fadeOut) ? c.fadeOut : 0, buffer };
         });
-        tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, visible: saved.visible !== false, volume: validVolume(saved.volume) ? saved.volume : 1, color: validColor(saved.color) ? saved.color : undefined, clips });
+        tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, visible: saved.visible !== false, volume: validVolume(saved.volume) ? saved.volume : 1, pan: validPan(saved.pan) ? saved.pan : 0, color: validColor(saved.color) ? saved.color : undefined, effects: validEffects(saved.effects) ? copyEffects(saved) : validEQ(saved.eq) ? copyEffects({ eq: saved.eq }) : [], clips });
       }
       nextId = data.nextId; timelineLength = validLength(data.timelineLength ?? null) ? data.timelineLength ?? null : null;
       restoreMarkers(data);
@@ -556,7 +588,7 @@ function editName(element, value, commit) {
   return activeEdit = { element, finish };
 }
 const undoStack = [], redoStack = [], selectedClips = new Set(), clipElements = new Map();
-const snapshot = () => ({ nextId, length: timelineLength, markers: [exportIn, exportOut], tracks: tracks.map(({ pending, ...t }) => ({ ...t, clips: t.clips.map(c => ({ ...c })) })) });
+const snapshot = () => ({ nextId, length: timelineLength, markers: [exportIn, exportOut], tracks: tracks.map(({ pending, ...t }) => ({ ...t, effects: copyEffects(t), clips: t.clips.map(c => ({ ...c })) })) });
 function updateHistoryButtons() {
   $('undo').disabled = !undoStack.length; $('undo').title = undoStack.length ? tr('Undo {action} (Ctrl+Z)', { action: undoStack.at(-1).label }) : tr('Undo (Ctrl+Z)');
   $('redo').disabled = !redoStack.length; $('redo').title = redoStack.length ? tr('Redo {action} (Ctrl+Shift+Z)', { action: redoStack.at(-1).label }) : tr('Redo (Ctrl+Shift+Z)');
@@ -569,9 +601,13 @@ function clearHistory() { undoStack.length = 0; redoStack.length = 0; selectedCl
 function travel(from, to, verb) {
   if (recording) { status(verb === 'Undo' ? tr('Stop recording before undoing.') : tr('Stop recording before redoing.')); return; }
   if (!from.length) return;
+  if ($('utility-dialog').open) $('utility-dialog').close();
+  if ($('compressor-dialog').open) $('compressor-dialog').close();
+  if ($('eq-dialog').open) $('eq-dialog').close();
+  if ($('fx-dialog').open) $('fx-dialog').close();
   const { label, state } = from.pop();
   to.push({ label, state: snapshot() });
-  tracks.splice(0, tracks.length, ...state.tracks.map(t => ({ ...t, clips: t.clips.map(c => ({ ...c })) }))); nextId = state.nextId; timelineLength = state.length ?? null;
+  tracks.splice(0, tracks.length, ...state.tracks.map(t => ({ ...t, effects: copyEffects(t), clips: t.clips.map(c => ({ ...c })) }))); nextId = state.nextId; timelineLength = state.length ?? null;
   [exportIn, exportOut] = state.markers ?? [0, null];
   selectedClips.clear(); updateHistoryButtons();
   renderTracks(); syncPlayback(); saveProject(); status(verb === 'Undo' ? tr('Undo: {action}.', { action: label }) : tr('Redo: {action}.', { action: label }));
@@ -683,7 +719,7 @@ const clipsToCut = () => {
   return tracks.flatMap(track => track.clips.filter(clip => selectedClips.has(clip) && time > clip.start + CUT_MARGIN && time < clip.start + clipDuration(clip) - CUT_MARGIN).map(clip => ({ clip, track })));
 };
 function updateClipActions() {
-  $('cut-clip').disabled = recording || !clipsToCut().length;
+  $('cut-clip').disabled = recording || !clipsToCut().length; $('glue-clips').disabled = recording || gluing || !glueChains().length;
   $('delete-clips').disabled = recording || !selectedClips.size;
   const allMuted = selectedClips.size > 0 && [...selectedClips].every(clip => clip.muted), mute = $('mute-clips');
   mute.disabled = recording || !selectedClips.size;
@@ -708,8 +744,8 @@ function cutClips() {
   const slice = (data, rate, from, to) => { const buffer = audio.createBuffer(1, to - from, rate); buffer.copyToChannel(data.subarray(from, to), 0); return buffer; };
   for (const { clip, track } of cuts) {
     const data = channel(clip.buffer), rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
-    const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0 };
-    const right = { ...clip, name: nextNameLike(clip.name || tr('Clip')), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0 };
+    const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0, fadeOut: 0 };
+    const right = { ...clip, name: nextNameLike(clip.name || tr('Clip')), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0, fadeIn: 0 };
     track.clips.splice(track.clips.indexOf(clip), 1, left, right);
     selectedClips.delete(clip); pieces.push(left, right);
   }
@@ -717,7 +753,56 @@ function cutClips() {
   renderTracks(); syncPlayback(); saveProject();
   status(trn('Clip cut at {time}.', '{count} clips cut at {time}.', cuts.length, { time: formatTime(time) }));
 }
-$('cut-clip').onclick = cutClips;
+$('cut-clip').onclick = cutClips; $('glue-clips').onclick = glueClips;
+// Glue: selected, unmuted clips of one track that overlap or touch form a chain; each chain of two or more becomes one
+// clip. It is rendered offline exactly as it plays (clip gains, the crossfades between its members, inner fades), so it
+// sounds the same; the first clip's fade-in, the last one's fade-out and the track settings stay live.
+function glueChains() {
+  const chains = [];
+  for (const track of tracks) {
+    const picked = track.clips.filter(clip => selectedClips.has(clip) && !clip.muted).sort((a, b) => a.start - b.start);
+    let chain = [];
+    for (const clip of picked) {
+      const end = Math.max(...chain.map(c => c.start + clipDuration(c)));
+      if (chain.length && clip.start > end + 1e-6) { if (chain.length > 1) chains.push({ track, clips: chain }); chain = []; }
+      chain.push(clip);
+    }
+    if (chain.length > 1) chains.push({ track, clips: chain });
+  }
+  return chains;
+}
+async function glueClips() {
+  const chains = glueChains();
+  if (recording || gluing || !chains.length) return;
+  gluing = true; updateClipActions(); status(tr('Gluing…'));
+  try {
+    const glued = [];
+    for (const { track, clips } of chains) {
+      const start = Math.min(...clips.map(c => c.start)), end = Math.max(...clips.map(c => c.start + clipDuration(c))), rate = Math.max(...clips.map(c => c.buffer.sampleRate));
+      const first = clips.find(c => c.start === start), last = clips.findLast(c => c.start + clipDuration(c) === end);
+      const offline = new OfflineAudioContext(1, Math.max(1, Math.round((end - start) * rate)), rate);
+      for (const clip of clips) {
+        const fades = clipFades({ clips }, clip), node = offline.createBufferSource(), gain = offline.createGain();
+        if (clip === first) fades.in = 0; if (clip === last) fades.out = 0;
+        node.buffer = clip.buffer; node.connect(gain); gain.connect(offline.destination);
+        scheduleFades(gain.gain, clip.start - start, 0, fades);
+        const level = clip.gain ?? 1; if (level !== 1) { const scale = offline.createGain(); scale.gain.value = level; gain.disconnect(); gain.connect(scale); scale.connect(offline.destination); }
+        node.start(clip.start - start, clip.trimStart || 0, clipDuration(clip));
+      }
+      const buffer = await offline.startRendering();
+      glued.push({ track, clips, clip: { name: first.name || tr('Clip'), start, trimStart: 0, trimEnd: 0, gain: 1, fadeIn: first.fadeIn || 0, fadeOut: last.fadeOut || 0, buffer } });
+    }
+    if (recording) return;
+    const count = glued.reduce((sum, g) => sum + g.clips.length, 0);
+    remember(trn('glue clip', 'glue {count} clips', count));
+    for (const { track, clips, clip } of glued) {
+      const index = Math.min(...clips.map(c => track.clips.indexOf(c)).filter(i => i >= 0));
+      track.clips = track.clips.filter(c => !clips.includes(c)); track.clips.splice(index, 0, clip);
+      for (const c of clips) selectedClips.delete(c); selectedClips.add(clip);
+    }
+    renderTracks(); syncPlayback(); saveProject(); status(trn('{count} clip glued.', '{count} clips glued.', count));
+  } finally { gluing = false; updateClipActions(); }
+}
 $('delete-clips').onclick = () => deleteSelectedClips();
 function deleteSelectedClips() {
   const count = tracks.reduce((sum, t) => sum + t.clips.filter(c => selectedClips.has(c)).length, 0);
@@ -889,10 +974,10 @@ function renderTracks() {
     const title = document.createElement('span'); title.className = 'track-name'; title.textContent = track.name;
     title.title = tr('Rename track (double-click)');
     title.ondblclick = () => editName(title, track.name, name => { remember(tr('rename track')); track.name = name; renderTracks(); saveProject(); status(tr('Track renamed: {name}.', { name })); });
-    const rec = document.createElement('button'); rec.type = 'button'; setIconButton(rec, 'record', tr('REC'), track.armed ? tr('{track} records', { track: track.name }) : tr('Record on {track}', { track: track.name })); rec.setAttribute('aria-pressed', String(track.armed)); rec.disabled = recording;
+    const rec = document.createElement('button'); rec.type = 'button'; setIconButton(rec, 'record', '', track.armed ? tr('{track} records', { track: track.name }) : tr('Record on {track}', { track: track.name })); rec.setAttribute('aria-pressed', String(track.armed)); rec.disabled = recording;
     rec.setAttribute('aria-label', tr('Record on track {n}', { n: track.id }));
     rec.onclick = () => { if (track.armed) return; remember(tr('move REC')); armTrack(track); renderTracks(); saveProject(); };
-    const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'muted'; setIconButton(mute, track.muted ? 'mute' : 'volume', tr('Mute'), tr('Toggle mute on {track}', { track: track.name })); mute.setAttribute('aria-pressed', String(track.muted));
+    const mute = document.createElement('button'); mute.type = 'button'; mute.className = 'muted'; setIconButton(mute, track.muted ? 'mute' : 'volume', '', tr('Toggle mute on {track}', { track: track.name })); mute.setAttribute('aria-pressed', String(track.muted));
     mute.setAttribute('aria-label', tr('Mute track {n}', { n: track.id }));
     mute.onclick = () => { remember(track.muted ? tr('unmute track') : tr('mute track')); track.muted = !track.muted; renderTracks(); syncPlayback(); saveProject(); };
     const menu = document.createElement('div'); menu.className = 'menu'; menu.id = `track-menu-${track.id}`; menu.popover = 'auto';
@@ -911,7 +996,8 @@ function renderTracks() {
       renderTracks(); syncPlayback(); saveProject(); status(tr('{track} removed.', { track: track.name }));
     };
     const swatches = document.createElement('div'); swatches.className = 'swatches'; swatches.setAttribute('role', 'group'); swatches.setAttribute('aria-label', tr('Track color'));
-    for (const [label, color] of TRACK_COLORS) {
+    // Group related shades in the palette without changing default track colors.
+    for (const [label, color] of [8, 0, 13, 7, 1, 2, 9, 3, 10, 4, 11, 5, 14, 12, 6, 15].map(index => TRACK_COLORS[index])) {
       const swatch = document.createElement('button'); swatch.type = 'button'; swatch.className = 'swatch'; swatch.style.setProperty('--swatch', color);
       swatch.title = label; swatch.setAttribute('aria-label', label); swatch.setAttribute('aria-pressed', String(trackColor(track) === color));
       swatch.onclick = () => { menu.hidePopover(); if (trackColor(track) === color) return; remember(tr('change color')); track.color = color; renderTracks(); saveProject(); };
@@ -920,19 +1006,32 @@ function renderTracks() {
     const colorLabel = document.createElement('span'); colorLabel.className = 'menu-label'; colorLabel.textContent = tr('Color');
     const separator = document.createElement('div'); separator.className = 'menu-separator'; separator.setAttribute('role', 'separator');
     menu.append(colorLabel, swatches, separator, remove);
-    const top = document.createElement('div'); top.className = 'track-head-top'; top.append(title, more, menu);
+    const fx = document.createElement('button'); fx.type = 'button'; fx.className = 'ghost track-fx'; fx.dataset.track = track.id;
+    fx.title = tr('Effects: {track}', { track: track.name }); fx.setAttribute('aria-label', fx.title); fx.setAttribute('aria-haspopup', 'dialog'); fx.setAttribute('aria-controls', 'fx-dialog'); fx.setAttribute('aria-expanded', 'false');
+    fx.onclick = () => {
+      openTrackEQ(track);
+      fx.setAttribute('aria-expanded', 'true'); $('fx-dialog').showModal();
+      $('fx-dialog').addEventListener('close', () => fx.setAttribute('aria-expanded', 'false'), { once: true });
+    };
+    const top = document.createElement('div'); top.className = 'track-head-top'; top.append(title, fx, more, menu); updateFxButton(track, fx);
     const volume = document.createElement('button'); volume.type = 'button'; volume.className = 'volume-handle'; volume.setAttribute('aria-haspopup', 'true');
     showVolumeHandle(volume, track.volume ?? 1, tr('Volume of {track}', { track: track.name }));
-    let adjusting = false;
-    volume.onclick = () => openVolume(volume, {
+    const pan = document.createElement('button'); pan.type = 'button'; pan.className = 'pan-handle'; pan.setAttribute('aria-haspopup', 'true'); showPanHandle(pan, track);
+    let adjusting = false, panning = false;
+    const target = {
       title: track.name, get: () => track.volume ?? 1,
       set: gain => { if (!adjusting) { remember(tr('change volume')); adjusting = true; } track.volume = gain; applyVolume(track); showVolumeHandle(volume, gain, tr('Volume of {track}', { track: track.name })); },
       commit: () => { adjusting = false; saveProject(); },
-    });
+      getPan: () => track.pan ?? 0,
+      setPan: value => { if (!panning) { remember(tr('change pan')); panning = true; } track.pan = value; applyPan(track); showPanHandle(pan, track); },
+      commitPan: () => { panning = false; saveProject(); },
+    };
+    volume.onclick = () => openVolume(volume, target); pan.onclick = () => openVolume(volume, target, 'pan');
     const bottom = document.createElement('div'); bottom.className = 'track-head-bottom'; bottom.append(rec, mute);
     const meter = document.createElement('span'); meter.className = 'out-meter'; meter.title = tr('Output level');
     const meterFill = document.createElement('span'); meterFill.className = 'out-meter-fill'; meter.append(meterFill); outputMeters.set(track, meterFill);
-    const mix = document.createElement('div'); mix.className = 'track-mix'; mix.append(volume, meter);
+    const levels = document.createElement('div'); levels.className = 'track-levels'; levels.append(volume, pan);
+    const mix = document.createElement('div'); mix.className = 'track-mix'; mix.append(levels, meter);
     const head = document.createElement('div'); head.className = 'track-head'; head.style.setProperty('--track-color', trackColor(track)); head.append(top, bottom, mix); $('track-heads').append(head);
     const lane = document.createElement('div'); lane.className = 'clip-lane'; lane.style.width = `${laneWidth}px`;
     lane.addEventListener('pointerdown', e => { if (e.target === lane && e.button === 0) selectArea(e, lane); });
@@ -945,6 +1044,10 @@ function renderTracks() {
       const wave = drawWaveform(clip);
       if (wave) block.append(wave);
       const label = document.createElement('span'); label.className = 'clip-label'; label.textContent = clip.name || tr('Clip'); block.append(label);
+      if ((clip.gain ?? 1) !== 1) { const badge = document.createElement('span'); badge.className = 'clip-gain'; badge.textContent = `${formatDb(clip.gain)} dB`; label.append(badge); }
+      // Fades longer than the click guard (set in the clip dialog or made by an overlap) are drawn as shaded corners.
+      const fades = clipFades(track, clip);
+      for (const side of ['in', 'out']) if (fades[side] > FADE_SECONDS * 1.01 && fades[side] * pxPerSecond >= 3) { const shade = document.createElement('span'); shade.className = `clip-fade ${side}`; shade.style.width = `${fades[side] * pxPerSecond}px`; block.append(shade); }
       if (track.muted || clip.muted) label.dataset.state = tr('muted');
       for (const side of ['left', 'right']) {
         const handle = document.createElement('span'); handle.className = `clip-handle ${side}`;
@@ -953,12 +1056,7 @@ function renderTracks() {
         handle.addEventListener('pointerdown', e => editClip(e, clip, side, block)); block.append(handle);
       }
       block.addEventListener('pointerdown', e => { if (e.target === block) editClip(e, clip, 'move', block); });
-      block.addEventListener('dblclick', e => {
-        if (e.target !== block) return;
-        e.stopPropagation();
-        const edit = editName(label, clip.name || tr('Clip'), name => renameClip(clip, name));
-        if (edit) edit.clip = clip;
-      });
+      block.addEventListener('dblclick', e => { if (e.target !== block) return; e.stopPropagation(); openClipDialog(clip); });
       lane.append(block);
     }
     if (track.pending) {
@@ -1002,10 +1100,12 @@ function updateRecordingPreview() {
   preview.drawn = peaks.length;
 }
 function getContext() { return context ??= new AudioContext(); }
-function stopPlayback() { for (const { node, gain, level } of playingSources) { try { node.stop(); } catch {} node.disconnect(); gain.disconnect(); level.disconnect(); } playingSources = []; }
+function stopPlayback() { playbackRevision++; for (const { node, gain, level, eqChain } of playingSources) { try { node.stop(); } catch {} node.disconnect(); gain.disconnect(); level.disconnect(); disposeEffectChain(eqChain); } playingSources = []; }
 // Volume faders run from -inf to +10 dB on a quadratic curve (0 dB sits at about 62% of the travel); gains are stored linear.
 const MAX_DB = 10, MIN_DB = -60, MAX_GAIN = 10 ** (MAX_DB / 20);
 const validVolume = value => Number.isFinite(value) && value >= 0 && value <= MAX_GAIN + 1e-9;
+const validPan = value => Number.isFinite(value) && value >= -1 && value <= 1;
+const validFade = value => Number.isFinite(value) && value >= 0 && value <= 3600;
 function sliderToGain(position) {
   if (position <= 0) return 0;
   const db = MAX_DB - (MAX_DB - MIN_DB) * (1 - position / 1000) ** 2;
@@ -1018,30 +1118,90 @@ function showVolumeHandle(button, gain, label) {
 }
 // One shared popover slider edits whichever volume handle was clicked.
 let volumeTarget = null;
-function openVolume(button, target) {
+// Tracks add pan to the same popover; focus lands on the typed value, ready to overwrite.
+function openVolume(button, target, focus = 'volume') {
   const popover = $('volume-popover');
-  if (volumeTarget?.button === button && popover.matches(':popover-open')) { popover.hidePopover(); return; }
-  volumeTarget = { ...target, button };
-  $('volume-title').textContent = target.title;
-  $('volume-slider').value = gainToSlider(target.get()); showVolumeLevel();
-  popover.showPopover(); anchorPopover(popover, button); $('volume-slider').focus();
+  if (volumeTarget?.button === button && popover.matches(':popover-open') && volumeTarget.focus === focus) { popover.hidePopover(); return; }
+  volumeTarget = { ...target, button, focus };
+  $('volume-title').textContent = target.title; $('pan-control').hidden = !target.getPan;
+  $('volume-slider').value = gainToSlider(target.get()); showVolumeLevel(); if (target.getPan) showPanLevel();
+  if (!popover.matches(':popover-open')) popover.showPopover();
+  anchorPopover(popover, button); const field = $(focus === 'pan' ? 'pan-value' : 'volume-level'); field.focus(); field.select();
 }
 function showVolumeLevel() {
   const db = formatDb(volumeTarget?.get() ?? 1);
-  $('volume-level').textContent = `${db} dB`; $('volume-slider').setAttribute('aria-valuetext', `${db} dB`);
+  if (document.activeElement !== $('volume-level')) $('volume-level').value = db;
+  $('volume-slider').setAttribute('aria-valuetext', `${db} dB`);
+}
+function showPanLevel() {
+  const value = volumeTarget.getPan(), text = formatPan(value);
+  $('pan-slider').value = Math.round(value * 100); $('pan-slider').setAttribute('aria-valuetext', text);
+  if (document.activeElement !== $('pan-value')) $('pan-value').value = text;
+}
+// Typed levels: dB with an optional sign, comma or point, "-inf" / "-∞" for silence; pan as L/R (or the
+// interface's letters) plus 0-100, a signed number, or C for the centre. Invalid text restores the current value.
+function parseDb(text) {
+  const value = text.trim().replace(',', '.').replace(/\s*db$/i, '');
+  if (/^-?(inf|∞)/i.test(value)) return 0;
+  const db = Number(value); return value && Number.isFinite(db) ? Math.min(MAX_GAIN, 10 ** (db / 20)) : null;
+}
+function parsePan(text) {
+  const value = text.trim().toUpperCase(), left = [tr('L{n}', { n: '' }), 'L'].map(s => s.toUpperCase()), right = [tr('R{n}', { n: '' }), 'R'].map(s => s.toUpperCase());
+  if (!value || value === tr('C').toUpperCase() || value === 'C') return 0;
+  const side = left.find(s => s && value.startsWith(s)) ? -1 : right.find(s => s && value.startsWith(s)) ? 1 : 0, number = Number(value.replace(/^[^\d+\-.]+/, '').replace(',', '.') || 0);
+  return Number.isFinite(number) ? Math.max(-1, Math.min(1, (side ? side * Math.abs(number) : number) / 100)) : null;
+}
+const formatPan = value => { const n = Math.round(Math.abs(value) * 100); return !n ? tr('C') : value < 0 ? tr('L{n}', { n }) : tr('R{n}', { n }); };
+function showPanHandle(button, track) {
+  const text = formatPan(track.pan ?? 0);
+  button.textContent = text; button.title = tr('Pan of {track}: {pan} (click to change)', { track: track.name, pan: text }); button.setAttribute('aria-label', tr('Pan of {track}: {pan}', { track: track.name, pan: text }));
 }
 $('volume-slider').oninput = event => { volumeTarget?.set(sliderToGain(+event.target.value)); showVolumeLevel(); };
 $('volume-slider').onchange = () => volumeTarget?.commit();
 $('volume-slider').ondblclick = event => { event.target.value = gainToSlider(1); event.target.oninput(event); volumeTarget?.commit(); };
+$('volume-level').onchange = () => { const gain = parseDb($('volume-level').value); if (gain !== null && volumeTarget) { volumeTarget.set(gain); volumeTarget.commit(); $('volume-slider').value = gainToSlider(gain); } $('volume-level').blur(); showVolumeLevel(); };
+$('pan-slider').oninput = event => { volumeTarget?.setPan(+event.target.value / 100); showPanLevel(); };
+$('pan-slider').onchange = () => volumeTarget?.commitPan();
+$('pan-slider').ondblclick = event => { event.target.value = 0; event.target.oninput(event); volumeTarget?.commitPan(); };
+$('pan-value').onchange = () => { const pan = parsePan($('pan-value').value); if (pan !== null && volumeTarget?.setPan) { volumeTarget.setPan(pan); volumeTarget.commitPan(); } $('pan-value').blur(); showPanLevel(); };
+for (const id of ['volume-level', 'pan-value']) $(id).addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $(id).dispatchEvent(new Event('change')); } });
+// Clip settings: name, gain (the track fader and typed dB) and fade in / out in ms. One undo step per opening.
+let clipEdit = null;
+function openClipDialog(clip) {
+  const fadeMax = Math.max(1, Math.round(clipDuration(clip) * 1000)); clipEdit = { clip, changed: false };
+  $('clip-name').value = clip.name || tr('Clip'); $('clip-gain-slider').value = gainToSlider(clip.gain ?? 1); $('clip-gain-value').value = formatDb(clip.gain ?? 1);
+  for (const side of ['in', 'out']) { const value = Math.round(((side === 'in' ? clip.fadeIn : clip.fadeOut) || 0) * 1000); $(`clip-fade-${side}-slider`).max = fadeMax; $(`clip-fade-${side}-slider`).value = value; $(`clip-fade-${side}`).max = fadeMax; $(`clip-fade-${side}`).value = value; }
+  $('clip-dialog').showModal(); $('clip-name').select();
+}
+function editClipSetting(action, rebuild = false) {
+  if (!clipEdit) return;
+  if (!clipEdit.changed) { remember(tr('edit clip')); clipEdit.changed = true; }
+  action(clipEdit.clip); renderTracks(); if (rebuild) syncPlayback();
+}
+function setClipGain(gain) {
+  editClipSetting(clip => { clip.gain = gain; for (const source of playingSources) if (source.clip === clip) source.level.gain.setTargetAtTime((source.track.volume ?? 1) * gain, context.currentTime, .02); });
+  $('clip-gain-slider').value = gainToSlider(gain); if (document.activeElement !== $('clip-gain-value')) $('clip-gain-value').value = formatDb(gain);
+}
+$('clip-name').onchange = () => { const name = $('clip-name').value.trim(); if (name && name !== clipEdit?.clip.name) { editClipSetting(clip => { clip.name = name; }); renderClipList(); } };
+$('clip-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('clip-dialog').close(); } });
+$('clip-gain-slider').oninput = event => setClipGain(sliderToGain(+event.target.value));
+$('clip-gain-slider').ondblclick = () => setClipGain(1);
+$('clip-gain-value').onchange = () => { const gain = parseDb($('clip-gain-value').value); if (gain !== null) setClipGain(gain); $('clip-gain-value').value = formatDb(clipEdit?.clip.gain ?? 1); };
+for (const side of ['in', 'out']) {
+  const key = side === 'in' ? 'fadeIn' : 'fadeOut', slider = $(`clip-fade-${side}-slider`), field = $(`clip-fade-${side}`);
+  const apply = (ms, rebuild) => { const value = Math.max(0, Math.min(+slider.max, Math.round(ms) || 0)); slider.value = field.value = value; editClipSetting(clip => { clip[key] = value / 1000; }, rebuild); };
+  slider.oninput = () => apply(+slider.value, false); slider.onchange = () => apply(+slider.value, true); field.onchange = () => apply(+field.value, true);
+}
+$('clip-dialog').addEventListener('close', () => { if ($('clip-name').value.trim() && document.activeElement === $('clip-name')) $('clip-name').dispatchEvent(new Event('change')); if (clipEdit?.changed) { syncPlayback(); saveProject(); status(tr('Clip updated: {name}.', { name: clipEdit.clip.name || tr('Clip') })); } clipEdit = null; });
 $('volume-popover').addEventListener('toggle', event => { volumeTarget?.button.classList.toggle('open', event.newState === 'open'); });
 function formatDb(gain) {
   if (gain <= 0) return '-∞';
   const db = 20 * Math.log10(gain);
   return Math.abs(db) < .05 ? '0.0' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`;
 }
-const TRACK_COLORS = [[tr('Violet'), '#8b7bff'], [tr('Blue'), '#4f8cff'], [tr('Cyan'), '#3cc8e6'], [tr('Green'), '#3ee0a1'], [tr('Yellow'), '#ffc857'], [tr('Orange'), '#ff9454'], [tr('Red'), '#ff5f7e'], [tr('Pink'), '#e879f9']];
+const TRACK_COLORS = [[tr('Violet'), '#8b7bff'], [tr('Blue'), '#4f8cff'], [tr('Cyan'), '#3cc8e6'], [tr('Green'), '#3ee0a1'], [tr('Yellow'), '#ffc857'], [tr('Orange'), '#ff9454'], [tr('Red'), '#ff5f7e'], [tr('Pink'), '#e879f9'], [tr('Indigo'), '#6366f1'], [tr('Teal'), '#14b8a6'], [tr('Lime'), '#a3e635'], [tr('Gold'), '#eab308'], [tr('Coral'), '#fb7185'], [tr('Lavender'), '#c4b5fd'], [tr('Brown'), '#b88762'], [tr('Slate'), '#94a3b8']];
 const validColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
-const trackColor = track => validColor(track.color) ? track.color : TRACK_COLORS[(track.id - 1) % TRACK_COLORS.length][1];
+const trackColor = track => validColor(track.color) ? track.color : TRACK_COLORS[(track.id - 1) % 8][1];
 // Per-track visibility: hiding takes the track out of the timeline and the mix, and it stays out of both exports;
 // unlike Mute it is a presentation choice and does not touch the track volume or its stored audio.
 function isHidden(track) { return track.visible === false; }
@@ -1067,29 +1227,44 @@ function renderVisibilityList() {
   $('visibility-list').replaceChildren(...tracks.map(switchFor));
 }
 function openVisibility() { renderVisibilityList(); $('visibility-dialog').showModal(); }
-function applyVolume(track) { for (const source of playingSources) if (source.track === track) source.level.gain.setTargetAtTime(track.volume, context.currentTime, .02); }
-function syncPlayback() {
+function applyVolume(track) { for (const source of playingSources) if (source.track === track) source.level.gain.setTargetAtTime((track.volume ?? 1) * (source.clip.gain ?? 1), context.currentTime, .02); }
+function applyPan(track) { for (const chain of new Set(playingSources.filter(s => s.track === track).map(s => s.eqChain))) chain?.pan?.set(track.pan ?? 0, true); }
+// Track pan, after the effects: the signal is made stereo (mono copied to both sides) and each side scaled by a
+// constant-power law normalised to unity at the centre, so pan 0 leaves the mix (and mono exports) exactly as before.
+const panGains = pan => [Math.SQRT2 * Math.cos((pan + 1) * Math.PI / 4), Math.SQRT2 * Math.sin((pan + 1) * Math.PI / 4)];
+function connectPan(audio, track, destination) {
+  const input = new GainNode(audio, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' }), split = audio.createChannelSplitter(2), merge = audio.createChannelMerger(2), left = audio.createGain(), right = audio.createGain();
+  input.connect(split); split.connect(left, 0); split.connect(right, 1); left.connect(merge, 0, 0); right.connect(merge, 0, 1); merge.connect(destination);
+  const set = (pan, smooth) => panGains(pan).forEach((value, i) => { const param = (i ? right : left).gain; if (smooth) param.setTargetAtTime(value, audio.currentTime, .02); else param.value = value; });
+  set(track.pan ?? 0); return { input, nodes: [input, split, left, right, merge], set };
+}
+async function syncPlayback() {
   stopPlayback();
   if (!isPlaying() || recording || !context) return;
+  const revision = playbackRevision;
+  try { await prepareTrackEffects(context, tracks); } catch (error) { if (revision === playbackRevision) { status(`Effects unavailable: ${error.message}`); pause(); } return; }
+  if (revision !== playbackRevision || !isPlaying() || recording) return;
   const now = playPosition();
   for (const track of tracks) {
     if (track.muted || isHidden(track)) continue;
+    // Tracks with latency (pitch shifter) are fed ahead of the playhead so their output lands on time.
+    let eqChain = null; const at = now + trackLatency(track, context.sampleRate);
     for (const clip of track.clips) {
-      const elapsed = Math.max(0, now - clip.start);
+      const elapsed = Math.max(0, at - clip.start);
       const duration = clipDuration(clip);
       if (clip.muted || duration <= 0 || elapsed >= duration) continue;
       const offset = (clip.trimStart || 0) + elapsed;
-      const startTime = context.currentTime + Math.max(0, clip.start - now);
-      const fade = Math.min(FADE_SECONDS, duration / 2);
+      const startTime = context.currentTime + Math.max(0, clip.start - at);
       const node = context.createBufferSource(), gain = context.createGain(), level = context.createGain();
-      level.gain.value = track.volume ?? 1;
-      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(context.destination);
-      gain.gain.setValueAtTime(fadeGain(elapsed, duration, fade), startTime);
-      if (elapsed < fade) gain.gain.linearRampToValueAtTime(1, startTime + fade - elapsed);
-      if (elapsed < duration - fade) gain.gain.setValueAtTime(1, startTime + duration - fade - elapsed);
-      gain.gain.linearRampToValueAtTime(0, startTime + duration - elapsed);
+      level.gain.value = (track.volume ?? 1) * (clip.gain ?? 1);
+      if (!eqChain) {
+        const input = context.createGain(), pan = connectPan(context, track, context.destination); eqChain = connectTrackEQ(context, track, input, pan.input, true);
+        eqChain.input = input; eqChain.pan = pan; eqChain.nodes.unshift(input); eqChain.nodes.push(...pan.nodes);
+      }
+      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(eqChain.input);
+      scheduleFades(gain.gain, startTime, elapsed, clipFades(track, clip));
       node.start(startTime, offset, duration - elapsed);
-      playingSources.push({ node, gain, level, track });
+      playingSources.push({ node, gain, level, track, clip, eqChain });
     }
   }
 }
@@ -1200,10 +1375,74 @@ function nextClipName(track) {
   const used = tracks.flatMap(t => t.clips).map(({ name = '' }) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)) ? Number(name.slice(prefix.length)) : 0);
   return `${track.name} ${Math.max(0, ...used) + 1}`;
 }
+// Recording capture. Chromium reads the microphone track itself (MediaStreamTrackProcessor) in a worker: on the device's
+// own clock, before Web Audio, whose input FIFO dropped pieces when microphone and output are separate devices, and off the
+// main thread, which made the old ScriptProcessor lose whole 4096-sample blocks. Frames lost upstream show up as a
+// timestamp jump of whole frames and are filled with silence, so the take keeps its length and stays in sync. Other
+// browsers tap the Web Audio graph with an AudioWorklet. Both hand mono Float32Array chunks to deliverRecording().
+const CAPTURE_WORKER_SOURCE = `
+let reader=null,previousEnd=null;
+onmessage=event=>{if(event.data==='stop'){reader?.cancel().catch(()=>{});return;}reader=event.data.readable.getReader();pump();};
+async function pump(){for(;;){let result;try{result=await reader.read();}catch{return;}if(result.done)return;const frame=result.value;try{handle(frame);}finally{frame.close();}}}
+function plane(frame,index){
+  const format=frame.format,planar=format.endsWith('-planar'),kind=format.slice(0,3),Type=kind==='f32'?Float32Array:kind==='s32'?Int32Array:kind==='s16'?Int16Array:Uint8Array;
+  const scale=kind==='f32'?1:kind==='s32'?2147483648:kind==='s16'?32768:128,bias=kind==='u8'||format.startsWith('u8')?128:0,n=frame.numberOfFrames,stride=planar?1:frame.numberOfChannels,offset=planar?0:index;
+  const data=new Type(frame.allocationSize({planeIndex:planar?index:0})/Type.BYTES_PER_ELEMENT);frame.copyTo(data,{planeIndex:planar?index:0});
+  const out=new Float32Array(n);for(let i=0;i<n;i++)out[i]=(data[i*stride+offset]-bias)/scale;return out;
+}
+function handle(frame){
+  const rate=frame.sampleRate,n=frame.numberOfFrames,channels=frame.numberOfChannels,chunks=[];let gap=0;
+  // Timestamp jitter stays well under half a frame; only whole missing frames count as a gap.
+  if(previousEnd!==null){const frames=Math.round((frame.timestamp-previousEnd)/1e6*rate/n);if(frames>0){gap=frames*n;chunks.push(new Float32Array(gap));}}
+  previousEnd=frame.timestamp+n/rate*1e6;
+  const mono=new Float32Array(n);for(let c=0;c<channels;c++){const data=plane(frame,c);for(let i=0;i<n;i++)mono[i]+=data[i]/channels;}
+  chunks.push(mono);postMessage({rate,gap,chunks},chunks.map(chunk=>chunk.buffer));
+}
+`;
+const RECORDER_PROCESSOR_SOURCE = `
+class AudiorecRecorder extends AudioWorkletProcessor {
+  constructor(){super();this.buffer=new Float32Array(1024);this.used=0;this.running=true;this.port.onmessage=e=>{if(e.data==='stop'){this.flush();this.running=false;}};}
+  flush(){if(!this.used)return;const chunk=this.buffer.slice(0,this.used);this.used=0;this.port.postMessage({rate:sampleRate,gap:0,chunks:[chunk]},[chunk.buffer]);}
+  process(inputs){
+    if(!this.running)return false;
+    const input=inputs[0],n=input[0]?.length??128;
+    for(let i=0;i<n;i++){let v=0;for(const channel of input)v+=channel[i];this.buffer[this.used++]=input.length?v/input.length:0;if(this.used===this.buffer.length)this.flush();}
+    return true;
+  }
+}
+registerProcessor('audiorec-recorder-v1',AudiorecRecorder);
+`;
+const recorderModules = new WeakMap();
+function deliverRecording(capture, { rate, gap, chunks }) {
+  if (!recording || recorder !== capture) return;
+  if (gap) { capture.gaps++; capture.gapSamples += gap; capture.rate = rate; }
+  for (const track of tracks) if (track.pending) { const pending = track.pending; pending.sampleRate ??= rate; for (const chunk of chunks) { pending.chunks.push(chunk); pending.length = (pending.length || 0) + chunk.length; } }
+}
+async function startRecorder(audio) {
+  const capture = { kind: '', gaps: 0, gapSamples: 0, rate: 0, stop() {} }, [micTrack] = stream.getAudioTracks();
+  if (typeof MediaStreamTrackProcessor === 'function' && typeof Worker === 'function') {
+    try {
+      const reader = new MediaStreamTrackProcessor({ track: micTrack, maxBufferSize: 200 });
+      const url = URL.createObjectURL(new Blob([CAPTURE_WORKER_SOURCE], { type: 'text/javascript' })), worker = new Worker(url); URL.revokeObjectURL(url);
+      worker.onmessage = event => deliverRecording(capture, event.data);
+      worker.postMessage({ readable: reader.readable }, [reader.readable]);
+      return Object.assign(capture, { kind: 'track', stop() { worker.onmessage = null; worker.postMessage('stop'); worker.terminate(); } });
+    } catch {}
+  }
+  if (!recorderModules.has(audio)) {
+    const url = URL.createObjectURL(new Blob([RECORDER_PROCESSOR_SOURCE], { type: 'text/javascript' }));
+    recorderModules.set(audio, audio.audioWorklet.addModule(url).catch(error => { recorderModules.delete(audio); throw error; }).finally(() => URL.revokeObjectURL(url)));
+  }
+  await recorderModules.get(audio);
+  const node = new AudioWorkletNode(audio, 'audiorec-recorder-v1', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max' }), silent = audio.createGain(), input = source;
+  silent.gain.value = 0; node.port.onmessage = event => deliverRecording(capture, event.data);
+  input.connect(node); node.connect(silent); silent.connect(audio.destination);
+  return Object.assign(capture, { kind: 'worklet', stop() { node.port.postMessage('stop'); node.port.onmessage = null; try { input.disconnect(node); } catch {} node.disconnect(); silent.disconnect(); } });
+}
 function finishRecording() {
   if (!recording) return;
   recording = false;
-  processor.disconnect(); silentGain.disconnect();
+  const capture = recorder; recorder = null; capture?.stop();
   stopMonitoring();
   if (tracks.some(t => t.pending?.chunks.length)) remember(tr('recording'));
   for (const track of tracks) {
@@ -1220,9 +1459,11 @@ function finishRecording() {
   }
   updateRecordButton();
   $('input-device').disabled = false; $('test-mic').disabled = false; renderTracks(); status(tr('Recording complete. Saving locally…'));
-  saveProject().then(() => { if ($('status').textContent === tr('Recording complete. Saving locally…')) status(tr('Recording saved in the browser. Press Play to listen back.')); });
+  const gaps = capture?.gaps || 0, saved = gaps ? trn('Recording saved. The microphone input had {count} gap ({ms} ms), filled with silence to keep the timing.', 'Recording saved. The microphone input had {count} gaps ({ms} ms in total), filled with silence to keep the timing.', gaps, { ms: Math.round(capture.gapSamples / capture.rate * 1000) }) : tr('Recording saved in the browser. Press Play to listen back.');
+  saveProject().then(() => { if ($('status').textContent === tr('Recording complete. Saving locally…')) status(saved); });
   if (monitoring) startMonitoring().catch(() => {});
 }
+const MIC_SETTLE_MS = 400;
 async function toggleRecording() {
   if (recording) { finishRecording(); return; }
   if (!tracks.some(t => t.armed)) { status(tr('Enable REC on at least one track.')); return; }
@@ -1230,22 +1471,17 @@ async function toggleRecording() {
   $('record').disabled = true;
   try {
     const audio = getContext(); await audio.resume();
-    if (!stream) await startMonitoring();
+    // A microphone opened just now ramps up over its first ~150 ms (measured on a steady tone): let it settle first.
+    if (!stream) { await startMonitoring(); status(tr('Preparing the microphone…')); await new Promise(resolve => setTimeout(resolve, MIC_SETTLE_MS)); }
     stopPlayback();
     if (!isPlaying()) await play();
-    const start = playPosition();
-    processor = audio.createScriptProcessor(4096, 1, 1);
-    silentGain = audio.createGain(); silentGain.gain.value = 0;
-    for (const track of tracks) if (track.armed) track.pending = { start, sampleRate: audio.sampleRate, chunks: [] };
-    processor.onaudioprocess = event => {
-      const chunk = event.inputBuffer.getChannelData(0);
-      for (const track of tracks) if (track.pending) { track.pending.chunks.push(new Float32Array(chunk)); track.pending.length = (track.pending.length || 0) + chunk.length; }
-    };
-    source.connect(processor); processor.connect(silentGain); silentGain.connect(audio.destination);
-    recording = true; updateRecordButton(); stopPlayback();
+    const capture = await startRecorder(audio), start = playPosition();
+    // The clip takes the capture's sample rate (set by the first chunk); playback resamples if it differs.
+    for (const track of tracks) if (track.armed) track.pending = { start, sampleRate: null, chunks: [] };
+    recorder = capture; recording = true; updateRecordButton(); stopPlayback();
     $('input-device').disabled = true; $('test-mic').disabled = true; renderTracks(); requestAnimationFrame(updateRecordingPreview); status(tr('Recording…'));
   } catch (error) {
-    stopMonitoring();
+    recorder?.stop(); recorder = null; stopMonitoring();
     for (const track of tracks) delete track.pending;
     status(tr('Recording not started: {message}', { message: error.message }));
   } finally { $('record').disabled = false; }
@@ -1265,10 +1501,10 @@ function rememberProjectFile(handle) {
 function projectBlob() {
     const data = projectData();
     const manifest = {
-      version: 5, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
+      version: 12, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
       video: data.videoFile ? { name: data.videoFile.name, type: data.videoFile.type, size: data.videoFile.size } : null,
-      tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, visible: !!track.visible, volume: track.volume, color: track.color,
-        clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: clip.muted,
+      tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, visible: !!track.visible, volume: track.volume, pan: track.pan, color: track.color, effects: track.effects,
+        clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: clip.muted, gain: clip.gain, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut,
           sampleRate: clip.sampleRate, sampleCount: clip.samples.length })) }))
     };
     const json = new TextEncoder().encode(JSON.stringify(manifest));
@@ -1312,7 +1548,7 @@ async function openProject(file, handle = null) {
     const jsonLength = view.getUint32(8, true);
     if (jsonLength > bytes.byteLength - 12) throw new Error(tr('incomplete file'));
     const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
-    if (![1, 2, 3, 4, 5].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
+    if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
     if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error(tr('invalid length'));
     let position = 12 + jsonLength;
     const videoSize = manifest.video?.size || 0;
@@ -1323,7 +1559,8 @@ async function openProject(file, handle = null) {
     const importedTracks = manifest.tracks.map(track => {
       if (!Array.isArray(track.clips) || !Number.isSafeInteger(track.id)) throw new Error(tr('invalid track'));
       if ((manifest.version >= 2 && !validVolume(track.volume)) || (manifest.version >= 3 && !validColor(track.color)) || (manifest.version >= 5 && typeof track.visible !== 'boolean')) throw new Error(tr('invalid track'));
-      return { id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, visible: manifest.version >= 5 ? track.visible : true, volume: manifest.version >= 2 ? track.volume : 1, color: manifest.version >= 3 ? track.color : undefined,
+      if ((manifest.version === 6 && !validEQ(track.eq)) || (manifest.version >= 7 && !validEffects(track.effects)) || (manifest.version >= 12 && !validPan(track.pan))) throw new Error(tr('invalid track'));
+      return { effects: manifest.version >= 7 ? copyEffects(track) : manifest.version === 6 ? copyEffects({ eq: track.eq }) : [], id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, visible: manifest.version >= 5 ? track.visible : true, volume: manifest.version >= 2 ? track.volume : 1, pan: manifest.version >= 12 ? track.pan : 0, color: manifest.version >= 3 ? track.color : undefined,
         clips: track.clips.map(clip => {
           const { sampleCount, sampleRate } = clip;
           if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || sampleCount * 4 > bytes.byteLength - position) throw new Error(tr('invalid audio'));
@@ -1333,7 +1570,9 @@ async function openProject(file, handle = null) {
           const buffer = audio.createBuffer(1, sampleCount, sampleRate);
           buffer.copyToChannel(samples, 0);
           if (!Number.isFinite(clip.start) || clip.start < 0 || !Number.isFinite(clip.trimStart) || clip.trimStart < 0 || !Number.isFinite(clip.trimEnd) || clip.trimEnd < 0 || clip.trimStart + clip.trimEnd >= buffer.duration) throw new Error(tr('invalid clip'));
-          return { name: clip.name || tr('Clip'), start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: !!clip.muted, buffer };
+          if (manifest.version >= 12 && (!validVolume(clip.gain) || !validFade(clip.fadeIn) || !validFade(clip.fadeOut))) throw new Error(tr('invalid clip'));
+          const settings = manifest.version >= 12 ? { gain: clip.gain, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut } : { gain: 1, fadeIn: 0, fadeOut: 0 };
+          return { name: clip.name || tr('Clip'), start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: !!clip.muted, ...settings, buffer };
         }) };
     });
     if (position !== bytes.byteLength || !Number.isSafeInteger(manifest.nextId) || manifest.nextId <= Math.max(0, ...importedTracks.map(t => t.id))) throw new Error(tr('invalid project file'));
@@ -1435,32 +1674,38 @@ async function decodeVideoAudio(rate) {
   decodedVideoAudio = { file: selectedVideo, rate, buffer };
   return buffer;
 }
-function renderMix(start, end, rate, channels, videoBuffer) {
+async function renderMix(start, end, rate, channels, videoBuffer) {
+  // Pre-roll for track latency: the first preroll samples are rendered only to fill the effects, then dropped.
+  const audible = tracks.filter(t => !t.muted && !isHidden(t)), preroll = Math.ceil(Math.max(0, ...audible.map(t => trackLatency(t, rate))) * rate), lead = preroll / rate;
   const length = Math.max(1, Math.round((end - start) * rate));
-  if (length * channels * 4 > 2e9) throw new Error(tr('the range is too long to export at once'));
-  const offline = new OfflineAudioContext(channels, length, rate);
+  if ((length + preroll) * channels * 4 > 2e9) throw new Error(tr('the range is too long to export at once'));
+  const offline = new OfflineAudioContext(channels, length + preroll, rate);
+  await prepareTrackEffects(offline, tracks);
   if (videoBuffer && start < videoBuffer.duration) {
     const node = offline.createBufferSource(), level = offline.createGain();
     node.buffer = videoBuffer; level.gain.value = videoGain;
-    node.connect(level); level.connect(offline.destination); node.start(0, start);
+    node.connect(level); level.connect(offline.destination); node.start(lead, start);
   }
   for (const track of tracks) {
     if (track.muted || isHidden(track)) continue;
+    // Offline time 0 is lead before the export start; latency-compensated tracks read further ahead.
+    let eqInput = null; const from = start - lead + trackLatency(track, rate);
     for (const clip of track.clips) {
-      const duration = clipDuration(clip), elapsed = Math.max(0, start - clip.start);
-      if (clip.muted || duration <= 0 || elapsed >= duration || clip.start >= end) continue;
-      const startTime = Math.max(0, clip.start - start), fade = Math.min(FADE_SECONDS, duration / 2);
+      const duration = clipDuration(clip), elapsed = Math.max(0, from - clip.start);
+      if (clip.muted || duration <= 0 || elapsed >= duration || clip.start >= end - start + from) continue;
+      const startTime = Math.max(0, clip.start - from);
       const node = offline.createBufferSource(), gain = offline.createGain(), level = offline.createGain();
-      level.gain.value = track.volume ?? 1;
-      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(offline.destination);
-      gain.gain.setValueAtTime(fadeGain(elapsed, duration, fade), startTime);
-      if (elapsed < fade) gain.gain.linearRampToValueAtTime(1, startTime + fade - elapsed);
-      if (elapsed < duration - fade) gain.gain.setValueAtTime(1, startTime + duration - fade - elapsed);
-      gain.gain.linearRampToValueAtTime(0, startTime + duration - elapsed);
+      level.gain.value = (track.volume ?? 1) * (clip.gain ?? 1);
+      if (!eqInput) { eqInput = offline.createGain(); connectTrackEQ(offline, track, eqInput, connectPan(offline, track, offline.destination).input); }
+      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(eqInput);
+      scheduleFades(gain.gain, startTime, elapsed, clipFades(track, clip));
       node.start(startTime, (clip.trimStart || 0) + elapsed, duration - elapsed);
     }
   }
-  return offline.startRendering();
+  const rendered = await offline.startRendering(); if (!preroll) return rendered;
+  const mix = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
+  for (let c = 0; c < channels; c++) mix.copyToChannel(rendered.getChannelData(c).subarray(preroll, preroll + length), c);
+  return mix;
 }
 const wavBlob = buffer => new Blob([wavBytes(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)), buffer.sampleRate)], { type: 'audio/wav' });
 function wavBytes(data, rate) {
@@ -1485,8 +1730,10 @@ const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || tr('Cl
 function clipWav(clip) {
   const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
   const samples = data.slice(from, Math.min(data.length, from + Math.round(clipDuration(clip) * rate)));
-  const fade = Math.min(Math.round(FADE_SECONDS * rate), (samples.length - 1) / 2);
-  for (let i = 0; i < samples.length && fade > 0; i++) samples[i] *= Math.min(1, i / fade, (samples.length - 1 - i) / fade);
+  const fade = Math.min(FADE_SECONDS * rate, (samples.length - 1) / 2);
+  // A downloaded clip stands alone: its own gain and fades, no crossfades with its neighbours.
+  const fades = fitFades({ duration: samples.length - 1, in: Math.max(fade, (clip.fadeIn || 0) * rate), out: Math.max(fade, (clip.fadeOut || 0) * rate) }), gain = clip.gain ?? 1;
+  for (let i = 0; i < samples.length; i++) samples[i] *= fadeGain(i, fades) * gain;
   return wavBytes([samples], rate);
 }
 // Minimal ZIP writer (stored, no compression: WAV barely compresses) for downloading every clip at once.
@@ -1627,10 +1874,6 @@ for (const id of ['project-menu']) $(id).addEventListener('click', event => { if
 $('name-cancel').onclick = () => $('name-dialog').close('cancel');
 $('track-visibility').onclick = openVisibility;
 $('visibility-close').onclick = () => $('visibility-dialog').close();
-$('visibility-dialog').addEventListener('click', event => {
-  const box = event.target.getBoundingClientRect?.();
-  if (event.target === $('visibility-dialog') && box && (event.clientY < box.top || event.clientY > box.bottom || event.clientX < box.left || event.clientX > box.right)) $('visibility-dialog').close();
-});
 $('add-track').onclick = addTrack;
 $('import-audio').onclick = $('clip-import').onclick = () => $('import-file').click();
 $('import-file').onchange = event => { const files = [...event.target.files]; event.target.value = ''; importAudio(files); };
@@ -1707,11 +1950,32 @@ for (const tab of helpTabs) {
     if (next === undefined) return; event.preventDefault(); showHelpTab(helpTabs.at(next % helpTabs.length), true);
   };
 }
+// Help > Keyboard shortcuts, the single list of every shortcut: [keys, action]. In keys, ' / ' separates alternatives
+// and '+' combinations; click, drag, wheel and double-click are mouse actions, everything else a key.
+function renderShortcuts() {
+  const mouse = { click: tr('click'), drag: tr('drag'), wheel: tr('wheel'), 'double-click': tr('double-click') };
+  const groups = [
+    [tr('Playback and recording'), [['Space', tr('Play / pause')], ['*', tr('Start / stop recording')], ['F', tr('Video full screen')], ['+ / -', tr('Move the playhead 1 second')], ['Ctrl++ / Ctrl+-', tr('Move the playhead 10 seconds')], ['Shift++ / Shift+-', tr('Move the playhead 1 frame')], [',', tr('Move the playhead to the export start')], ['.', tr('Move the playhead to the export end')]]],
+    [tr('Export range'), [['I', tr('Set the export start at the playhead')], ['O', tr('Set the export end at the playhead')], ['double-click', tr('Reset an export marker')]]],
+    [tr('Clips'), [['← / →', tr('Move the selected clips 1 second')], ['Ctrl+← / Ctrl+→', tr('Move the selected clips 10 seconds')], ['Shift+← / Shift+→', tr('Move the selected clips 1 frame')], ['C', tr('Cut the selected clips at the playhead')], ['G', tr('Glue the selected overlapping clips')], ['M', tr('Mute / unmute the selected clips')], ['Del / Backspace', tr('Delete the selected clips')], ['Esc', tr('Clear the selection')], ['Shift+click', tr('Add a clip to the selection')], ['Alt+drag', tr('Duplicate the selected clips')], ['double-click', tr('Rename a track; open the settings of a clip')]]],
+    [tr('Undo'), [['Ctrl+Z', tr('Undo')], ['Ctrl+Shift+Z / Ctrl+Y', tr('Redo')]]],
+    [tr('View'), [['Q', tr('Zoom to the whole timeline')], ['W', tr('Zoom out')], ['E', tr('Zoom in')], ['Ctrl+wheel', tr('Zoom over the timeline')], ['↑ / ↓', tr('Resize the video panel (splitter focused)')]]],
+    [tr('Effects'), [['Alt+↑ / Alt+↓', tr('Move the focused effect up / down')], ['↑ / ↓', tr('Change the focused knob (Shift: fine)')], ['Home / End', tr('Knob minimum / maximum')], ['double-click', tr('Reset a knob')]]],
+  ];
+  const keys = text => { const cell = document.createElement('td'); cell.className = 'shortcut-keys'; text.split(' / ').forEach((option, i) => {
+    if (i) cell.append(' / ');
+    option.split(/\+(?=.)/).forEach((part, j) => { if (j) cell.append('+'); if (mouse[part]) cell.append(mouse[part]); else { const kbd = document.createElement('kbd'); kbd.textContent = part; cell.append(kbd); } });
+  }); return cell; };
+  $('help-keys').replaceChildren(...groups.map(([title, rows]) => {
+    const table = document.createElement('table'), caption = document.createElement('caption'); table.className = 'shortcuts'; caption.textContent = title; table.append(caption);
+    for (const [combo, action] of rows) { const row = document.createElement('tr'), what = document.createElement('td'); what.textContent = action; row.append(keys(combo), what); table.append(row); }
+    return table;
+  }));
+}
+renderShortcuts();
 $('open-help').onclick = () => { $('help-dialog').showModal(); helpTabs.find(tab => tab.getAttribute('aria-selected') === 'true').focus(); };
 for (const tip of document.querySelectorAll('dialog.tip')) {
   tip.querySelector('.tip-close').onclick = () => tip.close();
-  // Only a click on the backdrop targets the dialog itself; clicks without coordinates (element.click()) report (0, 0).
-  tip.addEventListener('click', event => { const box = tip.getBoundingClientRect(); if (event.target === tip && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) tip.close(); });
 }
 for (const tip of document.querySelectorAll('#project-menu, #language-menu, #theme-menu')) tip.addEventListener('toggle', event => {
   const button = document.querySelector(`[popovertarget="${tip.id}"]`);
@@ -1767,6 +2031,23 @@ document.addEventListener('pointerup', event => {
   const control = event.target instanceof Element && event.target.closest('button, input[type="range"]');
   if (control && !control.closest('dialog')) control.blur();
 });
+// Physical keys for + and -: from the keyboard layout where the browser exposes it, otherwise learned from a press that
+// types them, so Shift still seeks when it changes the character (on Italian keyboards Shift + + types *).
+const seekCodes = { 1: new Set(['NumpadAdd']), [-1]: new Set(['NumpadSubtract']) };
+navigator.keyboard?.getLayoutMap?.().then(map => { for (const [code, char] of map) { if (char === '+' || char === '=') seekCodes[1].add(code); else if (char === '-') seekCodes[-1].add(code); } }).catch(() => {});
+function seekDirection(event) {
+  const typed = event.key === '+' ? 1 : event.key === '-' ? -1 : 0;
+  if (typed && !event.code.startsWith('Numpad')) seekCodes[typed].add(event.code);
+  return seekCodes[1].has(event.code) ? 1 : seekCodes[-1].has(event.code) ? -1 : typed;
+}
+// Moves the selected clips by seconds, keeping their spacing and stopping at 0. A held key is one undo step.
+function nudgeClips(seconds, repeat) {
+  const clips = [...selectedClips], shift = Math.max(-Math.min(...clips.map(c => c.start)), seconds);
+  if (!shift) return;
+  if (!repeat) remember(trn('move clip', 'move {count} clips', clips.length));
+  for (const clip of clips) clip.start += shift;
+  renderTracks(); syncPlayback(); saveProject();
+}
 document.addEventListener('keydown', async event => {
   const editing = event.target instanceof Element && event.target.closest('input:not([type="range"]), select, textarea, [contenteditable]');
   const key = event.key.toLowerCase();
@@ -1775,7 +2056,7 @@ document.addEventListener('keydown', async event => {
     event.preventDefault(); if (key === 'y' || event.shiftKey) redo(); else undo(); return;
   }
   if ((event.key === 'Delete' || event.key === 'Backspace') && selectedClips.size && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); deleteSelectedClips(); return; }
-  if (key === 'w' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
+  if (key === 'f' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
     event.preventDefault();
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('.video-frame').requestFullscreen(); }
     catch (error) { status(tr('Could not toggle full screen: {message}', { message: error.message })); }
@@ -1784,13 +2065,28 @@ document.addEventListener('keydown', async event => {
   if ((key === 'i' || key === 'o') && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
     event.preventDefault(); markAtPlayhead(key === 'i' ? 'in' : 'out'); return;
   }
+  // + and - move the playhead, the arrows move the selected clips: 1 s, Ctrl 10 s, Shift one video frame. Controls that
+  // use the arrows themselves (fields, knobs, tabs, the splitter, effect rows) keep them; recording is never interrupted.
+  const free = !event.altKey && !event.metaKey && !recording && !editing && !document.querySelector('dialog[open], :popover-open');
+  const seek = free ? seekDirection(event) : 0;
+  if (seek) {
+    event.preventDefault(); const position = playPosition();
+    seekTo(event.shiftKey ? (Math.round(position * fps) + seek) / fps : position + seek * (event.ctrlKey ? 10 : 1)); return;
+  }
+  if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && free && selectedClips.size && !(event.target instanceof Element && event.target.closest('[role="slider"], [role="tab"], [role="separator"], .fx-item'))) {
+    event.preventDefault(); nudgeClips((event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 1 / fps : event.ctrlKey ? 10 : 1), event.repeat); return;
+  }
+  // Q fits the whole timeline, W zooms out, E zooms in.
+  if ((key === 'q' || key === 'w' || key === 'e') && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
+    event.preventDefault(); if (key === 'q') { $('zoom').value = $('zoom').min; rescale(); } else zoomBy(key === 'e' ? 1 : -1); return;
+  }
+  if ((event.key === ',' || event.key === '.') && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
+    event.preventDefault(); seekTo(event.key === ',' ? exportIn : exportOutTime()); return;
+  }
   if (key === 'm' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); toggleClipMute(); return; }
+  if (key === 'g' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); glueClips(); return; }
   if (key === 'c' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
-  const zoom = { '+': 1, '=': 1, '-': -1, '_': -1 }[event.key];
-  if (zoom !== undefined && !event.altKey && !event.ctrlKey && !event.metaKey && !document.querySelector('dialog[open]') && !(event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable]'))) {
-    event.preventDefault(); zoomBy(zoom); return;
-  }
   const isSpace = event.code === 'Space';
   const isRecord = event.key === '*' || event.code === 'NumpadMultiply';
   if ((!isSpace && !isRecord) || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -1863,8 +2159,22 @@ $('timeline-length').addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); event.target.value = timelineLength === null ? '' : formatTime(timelineLength); event.target.blur(); }
 });
 $('timeline-length').addEventListener('blur', updateLengthField);
+function showVideoPanel(open) {
+  const button = $('video-panel-toggle');
+  if (!open && ($('video-panel').contains(document.activeElement) || document.activeElement === $('splitter'))) button.focus();
+  $('video-panel').hidden = $('splitter').hidden = !open;
+  document.querySelector('.app').classList.toggle('video-hidden', !open);
+  button.setAttribute('aria-pressed', String(open)); button.setAttribute('aria-expanded', String(open));
+  button.title = open ? tr('Hide video and clips panel') : tr('Show video and clips panel'); button.setAttribute('aria-label', button.title);
+  try { localStorage.setItem('audiorec-video-panel', open ? 'shown' : 'hidden'); } catch {}
+  const height = document.querySelector('.app').style.getPropertyValue('--video-height');
+  if (open && height) setVideoHeight(parseInt(height, 10));
+  if (!restoring) rescale();
+}
+$('video-panel-toggle').onclick = () => showVideoPanel($('video-panel').hidden);
 function setVideoHeight(height) {
   const app = document.querySelector('.app');
+  if ($('video-panel').hidden) return;
   if (height === null) { app.style.removeProperty('--video-height'); try { localStorage.removeItem('audiorec-video-height'); } catch {} return; }
   const available = $('video-panel').offsetHeight + $('tracks-panel').offsetHeight;
   height = Math.round(Math.max(140, Math.min(available - 180, height)));
@@ -1891,6 +2201,7 @@ $('splitter').addEventListener('keydown', event => {
   event.preventDefault(); event.stopPropagation(); setVideoHeight($('video-panel').offsetHeight + step);
 });
 try { const saved = +localStorage.getItem('audiorec-video-height'); if (saved) setVideoHeight(saved); } catch {}
+try { if (localStorage.getItem('audiorec-video-panel') === 'hidden') showVideoPanel(false); } catch {}
 window.addEventListener('resize', () => { const height = document.querySelector('.app').style.getPropertyValue('--video-height'); if (height) setVideoHeight(parseInt(height, 10)); rescale(); });
 video.addEventListener('loadedmetadata', () => { rescale(); detectFps(); });
 let ticksFrame = null;

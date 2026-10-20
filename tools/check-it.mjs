@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const source = readFileSync('app/index.html','utf8');
-const js = readFileSync('app/app.js','utf8');
+const js = ['app.js','eq.js','compressor.js','effects.js'].map(file=>readFileSync(`app/${file}`,'utf8')).join('\n');
 const landing = readFileSync('index.html','utf8');
 const names={it:'Italiano',es:'Español',ru:'Русский',zh:'简体中文'};
 const load=code=>{ let locale; vm.runInNewContext(readFileSync(`app/locales/${code}.js`,'utf8'),{I18N:{register:(c,name,strings,html)=>locale={code:c,name,strings,html}}}); return locale; };
@@ -21,7 +21,7 @@ const normalize = text => text.replace(/\s+/g,' ').trim();
 const keys = new Set([...plural.map(([one])=>one),...codeKeys]);
 for(const [, ,text] of page.matchAll(/\s(title|aria-label|placeholder)="([^"]*)"/g)) { const key=normalize(decode(text)); if(/[a-z]/i.test(key)) keys.add(key); }
 for(const [,text] of page.matchAll(/>([^<]+)</g)) { const key=normalize(decode(text)); if(/[a-z]/i.test(key)) keys.add(key); }
-assert.equal(keys.size,309); assert.equal(blocks.size,22);
+assert.equal(keys.size,462); assert.equal(blocks.size,23);
 assert.match(source, /<header class="topbar">[\s\S]*?id="language-button"[^>]*popovertarget="language-menu"/);
 assert.match(source, /id="language-menu"[^>]*popover/);
 assert.match(source, /id="language-options"/);

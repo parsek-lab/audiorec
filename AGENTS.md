@@ -12,7 +12,7 @@ Guidance for coding agents working on Audiorec. User-facing docs are in `README.
 ## Running and verifying
 
 1. Syntax check: `node --check app/app.js` (and `app/theme.js`)
-   Checks (Node, no dependencies): `node tools/check-it.mjs` (locales; update its string count when UI strings change) and `node tools/check-theme.mjs` (themes).
+   Checks (Node, no dependencies): `node tools/check-it.mjs` (locales; update its string count when UI strings change) and `node tools/check-theme.mjs` (themes), `node tools/check-recording.mjs` (capture worker), `node tools/check-effects.mjs`, `node tools/check-eq.mjs`, `node tools/check-compressor.mjs`; `node tools/check-eq-ui.mjs` runs headless Chromium (fake microphone included; `CHROME_BIN` selects the browser).
 2. Serve locally (mic needs localhost/HTTPS): `npx serve .` or `python -m http.server 8000`, then open `/app/`
 3. Check the change in a Chromium browser. Real microphone tests cannot be automated; say so explicitly when reporting.
 
@@ -22,14 +22,14 @@ There is no test suite. Report what was verified and what was not.
 
 - Single script, global scope, plain functions. `$ = id => document.getElementById(id)`.
 - Dense style: short one-liners, chained statements with `;` on one line, few comments. Match it.
-- State lives in module-level variables: `tracks`, `recording`, `context`, `stream`, `source`, `processor`, `nextId`, `selectedVideo`, `projectHandle`.
+- State lives in module-level variables: `tracks`, `recording`, `context`, `stream`, `source`, `recorder`, `nextId`, `selectedVideo`, `projectHandle`.
 - Track shape: `{ id, name, armed, muted, volume (linear gain 0–3.16, i.e. −∞ to +10 dB; default 1), color? (`#rrggbb`, default from `TRACK_COLORS` via `trackColor()`), clips, pending? }`. Clip shape: `{ name, start, trimStart, trimEnd, buffer: AudioBuffer }` (mono).
 - After changing tracks/clips, call in this order as needed: `renderTracks()` → `syncPlayback()` → `saveProject()`; then `status('…')` for user feedback.
 - `renderTracks()` rebuilds the whole track DOM; do not keep references to clip elements across renders.
 - Buttons with icons use `setIconButton(button, iconName, text, tooltip)`. Icons are `<symbol id="i-NAME">` in `index.html`.
 - Tooltips include the shortcut in parentheses only when there is one, e.g. `Record (*)`; no "(no shortcut)" suffix.
 - Timeline scale: `pxPerSecond`, computed in `renderTimeline()` from the `#zoom` slider (log scale from whole video to 1 s visible). Track headers (`#track-heads`) are a separate fixed column; the timeline scroll area starts at x = 0. Header and lane rows share the `--row` height in CSS.
-- Fades: `FADE_SECONDS = .005`, applied as gain ramps both in `syncPlayback` and in the offline `renderMix` used by export. Keep both in sync.
+- Fades: `FADE_SECONDS = .0015`, raised-cosine shape from `fadeGain()`, scheduled by `scheduleFades()` in both `syncPlayback` and the offline `renderMix` used by export, and applied per sample in `clipWav`. `clipFades(track, clip)` turns partial overlaps between clips of a track into equal-power crossfades; pass its result to `scheduleFades()`. Value curves throw if they overlap other automation events: keep using `scheduleFades()`.
 
 ## Persistence — handle with care
 
@@ -48,4 +48,4 @@ There is no test suite. Report what was verified and what was not.
 
 ## Recording pipeline
 
-`getUserMedia` → `MediaStreamSource` → `AnalyserNode` (level meter) and, while recording, → `ScriptProcessor(4096)` → zero-gain node → destination. Chunks are copied into `track.pending.chunks` for every armed track and assembled into an `AudioBuffer` in `finishRecording()`. Pause, seek or end of the timeline stops recording. Past the video's end, playback and recording continue on an AudioContext clock (`startOvertime`/`stopOvertime`, `cursor`), up to `timelineEnd()`; use `playPosition()`, `isPlaying()`, `play()`, `pause()` and `seekTo()` instead of reading or driving `video` directly.
+`getUserMedia` → `MediaStreamSource` → `AnalyserNode` (level meter, monitor). Recording does not go through Web Audio where it can avoid it: `startRecorder()` reads the microphone track with `MediaStreamTrackProcessor` in a Blob worker (`CAPTURE_WORKER_SOURCE`), on the device clock and off the main thread; whole frames missing from the timestamps are filled with silence and counted as gaps. Without it (non-Chromium), an AudioWorklet (`audiorec-recorder-v1`) taps `source`. Both call `deliverRecording()`, which appends mono `Float32Array` chunks to `track.pending.chunks` for every armed track; `finishRecording()` stops the capture and assembles an `AudioBuffer` at the capture's sample rate. Do not reintroduce `ScriptProcessor`: it lost whole 4096-sample blocks when the main thread was busy. Pause, seek or end of the timeline stops recording. Past the video's end, playback and recording continue on an AudioContext clock (`startOvertime`/`stopOvertime`, `cursor`), up to `timelineEnd()`; use `playPosition()`, `isPlaying()`, `play()`, `pause()` and `seekTo()` instead of reading or driving `video` directly.

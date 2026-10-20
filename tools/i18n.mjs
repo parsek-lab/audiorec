@@ -26,7 +26,7 @@ const unquote = text => text.replace(/\\(.)/g, '$1');
 function sourceStrings() {
   const strings = new Map(), html = new Map();
   const add = (key, value = '') => { if (/[a-z]/i.test(key) && !strings.has(key)) strings.set(key, value); };
-  const code = read('app.js');
+  const code = ['app.js', 'eq.js', 'compressor.js', 'effects.js'].map(read).join('\n');
   for (const [, one] of code.matchAll(new RegExp(String.raw`\btrn\(\s*${literal}`, 'g'))) add(unquote(one), { one: '', other: '' });
   for (const [, key] of code.matchAll(new RegExp(String.raw`\btr\(\s*${literal}`, 'g'))) add(unquote(key));
   let page = read('index.html');

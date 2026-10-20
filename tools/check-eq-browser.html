@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>Native EQ DSP checks</title>
+<select id="fx-add" hidden><option value=""></option></select><canvas id="eq-graph" hidden></canvas><button id="eq-remove" hidden></button><input id="eq-enabled" hidden><dialog id="fx-dialog"></dialog><dialog id="eq-dialog"></dialog><button id="compressor-add" hidden></button><input id="compressor-enabled" hidden><button id="compressor-remove" hidden></button><dialog id="compressor-dialog"></dialog><dialog id="utility-dialog"></dialog><input id="utility-enabled" hidden><select id="reverb-preset" hidden></select><button id="utility-remove" hidden></button><pre id="result">RUNNING</pre>
+<script>const $ = id => document.getElementById(id), tr = text => text, I18N = { language: 'en' };</script><script src="../app/eq.js"></script><script src="../app/compressor.js"></script><script src="../app/effects.js"></script><script src="extra-effects-browser.js"></script>
+<script>
+(async () => {
+  const assert = (v, message) => { if (!v) throw Error(message); };
+  async function rms(eq, effects = null, amplitude = .1, frequency = 1000) {
+    const audio = new OfflineAudioContext(1, 48000, 48000), source = audio.createBufferSource();
+    const buffer = audio.createBuffer(1, 48000, 48000), data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = amplitude * Math.sin(2 * Math.PI * frequency * i / 48000);
+    await prepareTrackEffects(audio, effects ? [{ effects }] : []);
+    source.buffer = buffer; connectTrackEQ(audio, effects ? { effects } : { eq }, source, audio.destination); source.start();
+    const result = (await audio.startRendering()).getChannelData(0);
+    let power = 0; for (let i = 24000; i < result.length; i++) power += result[i] ** 2;
+    return Math.sqrt(power / 24000);
+  }
+  try {
+    const eq = defaultEQ(), dry = await rms(null), flat = await rms(eq);
+    assert(Math.abs(flat / dry - 1) < .001, 'Flat EQ must be unity');
+    eq.bands[2].freq = 1000; eq.bands[2].gain = 12;
+    const boosted = await rms(eq); assert(Math.abs(20 * Math.log10(boosted / dry) - 12) < .1, 'Parametric gain must be +12 dB');
+    const effects = [{ type: 'equalizer', eq: copyEQ(eq) }, { type: 'equalizer', eq: copyEQ(eq) }];
+    assert(Math.abs(20 * Math.log10((await rms(null, effects)) / dry) - 24) < .1, 'Two serial EQs must sum to +24 dB');
+    effects[0].eq.enabled = false;
+    assert(Math.abs(20 * Math.log10((await rms(null, effects)) / dry) - 12) < .1, 'Per-effect bypass leaves the other EQ active');
+    eq.enabled = false; assert(Math.abs((await rms(eq)) / dry - 1) < .001, 'Bypass must be unity');
+    eq.enabled = true; eq.bands[2].gain = 0; eq.bands[0].enabled = true; eq.bands[0].freq = 1000;
+    assert(Math.abs(20 * Math.log10((await rms(eq)) / dry) + 3.01) < .1, 'Butterworth low cut must be -3 dB at cutoff');
+    eq.bands[0].enabled = false; eq.bands[1].enabled = true; eq.bands[1].freq = 1000;
+    assert(Math.abs(20 * Math.log10((await rms(eq)) / dry) + 3.01) < .1, 'Butterworth high cut must be -3 dB at cutoff');
+    // Every slope stays -3 dB at the cutoff (no resonance) and attenuates one octave above by roughly its slope.
+    for (const slope of [12, 24, 36, 48]) {
+      eq.bands[1].slope = slope; const at = 20 * Math.log10((await rms(eq)) / dry), octave = 20 * Math.log10((await rms(eq, null, .1, 2000)) / (await rms(null, null, .1, 2000)));
+      assert(Math.abs(at + 3.01) < .15, `High cut ${slope} dB/oct must be -3 dB at cutoff, got ${at}`); assert(octave < -slope + 4 && octave > -slope - 3, `High cut ${slope} dB/oct one octave above: ${octave}`);
+    }
+    eq.bands[1].slope = 12;
+    const settings = defaultCompressor(); settings.threshold = -30; settings.ratio = 12; settings.knee = 0;
+    const loud = await rms(null, null, .8, 777), compressed = await rms(null, [{ type: 'compressor', compressor: settings }], .8, 777);
+    assert(compressed < loud * .9, 'Native compressor must reduce a loud signal');
+    settings.gain = 6; const makeup = await rms(null, [{ type: 'compressor', compressor: settings }], .8, 777);
+    assert(Math.abs(20 * Math.log10(makeup / compressed) - 6) < .1, 'Manual makeup must add 6 dB');
+    settings.enabled = false;
+    assert(Math.abs((await rms(null, [{ type: 'compressor', compressor: settings }], .8, 777)) / loud - 1) < .001, 'Compressor bypass must be unity, including input/output gain');
+    settings.enabled = true; settings.gain = 0; settings.mix = 0;
+    assert(Math.abs((await rms(null, [{ type: 'compressor', compressor: settings }], .8, 777)) / loud - 1) < .001, 'Dry mix must be unity with latency compensation');
+    settings.mix = 50; const parallel = await rms(null, [{ type: 'compressor', compressor: settings }], .8, 777);
+    assert(Math.abs(parallel / ((loud + compressed) / 2) - 1) < .02, 'Parallel mix must be phase aligned');
+    const extraChecks = await runAdditionalEffectChecks();
+    $('result').textContent = 'PASS: native OfflineAudioContext flat response, +12 dB peak, serial +24 dB chain, per-effect bypass, low/high cut -3 dB; native compressor reduction, makeup, bypass and aligned dry/wet mix; ' + extraChecks;
+  } catch (e) { $('result').textContent = 'FAIL: ' + String(e) + '\n' + (e.stack || ''); }
+})();
+</script>

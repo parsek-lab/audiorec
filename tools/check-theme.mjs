@@ -85,7 +85,7 @@ const LAYOUT = new Set(['--radius', '--radius-sm', '--font', '--mono']), colorTo
 for (const name of ['light', 'accessible']) eq(Object.keys(themes[name]).sort(), colorTokens.sort(), `${name} defines every color token`);
 const end = css.indexOf('--bg-glow:none}') + '--bg-glow:none}'.length, components = css.slice(end);
 eq(components.match(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/gi), null, 'components use tokens, not raw colors');
-for (const [, name] of css.matchAll(/var\((--[\w-]+)/g)) if (!['--track-color', '--clip', '--swatch', '--tone', '--grid', '--row', '--ruler', '--mix', '--video-row', '--video-height'].includes(name)) ok(name in themes.dark, `${name} is defined`);
+for (const [, name] of css.matchAll(/var\((--[\w-]+)/g)) if (!['--track-color', '--clip', '--swatch', '--tone', '--grid', '--row', '--ruler', '--mix', '--video-row', '--video-height', '--knob-angle', '--arc-a', '--arc-b', '--cols'].includes(name)) ok(name in themes.dark, `${name} is defined`);
 ok(/@media \(prefers-reduced-motion:reduce\)\{[^}]*animation-duration:\.01ms!important/.test(css), 'reduced motion stops animations');
 ok(/:root\[data-theme=accessible\] :focus-visible[^{]*\{outline:3px solid var\(--focus\)/.test(css), 'accessible focus outline');
 ok(/:root\[data-theme=accessible\] \.track-head-bottom button\[aria-pressed=true\]::after\{content:"✓"/.test(css), 'REC and Mute show a check mark when on');
@@ -145,7 +145,7 @@ for (const name of ['--wave', '--wave-video', '--wave-rec']) ok(js.includes(`the
 eq(js.match(/fillStyle = '[^']*'/g), null, 'no hard-coded canvas colors');
 ok(/const TRACK_COLORS = \[\[tr\('Violet'\), '#8b7bff'\]/.test(js), 'stored track colors are unchanged');
 // The theme lives only in localStorage: the project database, snapshot and .audiorec file never see it.
-const body = name => { const start = js.search(new RegExp(`^(async )?function ${name}\\(`, 'm')); ok(start >= 0, name); return js.slice(start, js.indexOf('\n}\n', start)); };
+const body = name => { const start = js.search(new RegExp(`^(async )?function ${name}\\(`, 'm')); ok(start >= 0, name); const end = js.slice(start).search(/\r?\n}\r?\n/); ok(end >= 0, `${name} closing brace`); return js.slice(start, start + end); };
 for (const name of ['projectData', 'saveProject', 'restoreProject', 'projectBlob', 'openProject']) ok(!/theme/i.test(body(name)), `${name} does not store the theme`);
 ok(/indexedDB\.open\('audio-sopra-video', 1\)/.test(js), 'project database name and version unchanged');
 const labels = ['Theme', 'System', 'Dark', 'Light', 'Accessible', 'Now: {theme}', 'High contrast, clear focus, labeled states', 'Theme: {theme}.', 'muted', 'System follows the light or dark setting of your device.'];
