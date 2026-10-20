@@ -72,7 +72,7 @@ for(const code of Object.keys(names)) {
   assert.ok(Object.keys(table[code]).length>=55,code+' landing copy coverage');
   for(const [key,text] of Object.entries(table[code])) {
     assert.ok(text.trim(),code+': '+key+' landing text');
-    if(['hero','lead','step-record','frames','projects',...['shortcut-play','shortcut-record','shortcut-fullscreen','shortcut-zoom','shortcut-delete','shortcut-undo']].includes(key)) {
+    if(['hero','lead','step-record','frames','projects'].includes(key)||key.startsWith('shortcut-')) {
       const original=landing.match(new RegExp(`<[^>]+data-landing-key="${key}"[^>]*>([^\\n]*?)<\\/(?:h1|p|div)>`))?.[1];
       assert.ok(original,code+': '+key+' source');
       assert.deepEqual(tags(text),tags(original),code+': '+key+' landing markup');

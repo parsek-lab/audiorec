@@ -127,3 +127,9 @@ Verification: `node tools/check-effects.mjs` checks ranges, presets, settings an
 ## Browser support
 
 Target: recent Chrome / Edge. Browsers without the File System Access API (Firefox, Safari) fall back to downloading the project file, and may not support output device selection.
+
+## License
+
+Audiorec is free software, licensed under the **GNU Affero General Public License v3.0 only** (`AGPL-3.0-only`); the full text is in [LICENSE](LICENSE). You may use, study, share and modify it; if you distribute a modified version, or let people use one over a network (for example by hosting it), you must offer them its complete source code under the same license.
+
+The name "Audiorec" and the Audiorec logo are not licensed under the AGPL: forks must use a different name and logo.
