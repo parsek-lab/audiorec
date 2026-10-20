@@ -1,5 +1,11 @@
 // 简体中文 interface translation: contextual Google Translate batches with editorial review.
 I18N.register("zh", "简体中文", {
+  "Loop playback between the export markers": "在导出标记之间循环播放",
+  "Loop on: playback repeats between the export markers": "循环已开启：在导出标记之间重复播放",
+  "Loop on.": "循环已开启。",
+  "Loop off.": "循环已关闭。",
+  "Open Help on the keyboard shortcuts": "打开帮助中的键盘快捷键",
+  "Show / hide the video and clips panel": "显示 / 隐藏视频和片段面板",
   "Glue the selected overlapping clips (G)": "合并所选的重叠片段 (G)",
   "Glue the selected overlapping clips": "合并所选的重叠片段",
   "Gluing\u2026": "正在合并…",
@@ -120,8 +126,8 @@ I18N.register("zh", "简体中文", {
   "{rate} Hz modulation · {depth} ms depth": "调制 {rate} Hz · 深度 {depth} ms",
   "Add effect": "添加效果",
   "Audio effect": "音频效果", "Enable effect": "启用效果", "Remove effect": "移除效果", "Preset": "预设", "Hall": "大厅", "Room": "房间", "Plate": "板式", "Effect visualization": "效果可视化",
-  "Hide video and clips panel": "隐藏视频和片段面板",
-  "Show video and clips panel": "显示视频和片段面板",
+  "Hide video and clips panel (V)": "隐藏视频和片段面板 (V)",
+  "Show video and clips panel (V)": "显示视频和片段面板 (V)",
   "Compressor": "压缩器", "Enable compressor": "启用压缩器", "Remove compressor": "移除压缩器",
   "Compressor input/output transfer curve": "压缩器输入/输出传输曲线",
   "Input": "输入", "Reduction": "增益衰减", "−∞ dBFS": "−∞ dBFS", "0.0 dB": "0.0 dB",

@@ -1,6 +1,12 @@
 // Italian interface translation, drafted in 20 contextual Google Translate batches and edited in context.
 // Regenerate new keys with node tools/i18n.mjs update it; preserve placeholders and shortcuts.
 I18N.register("it", "Italiano", {
+  "Loop playback between the export markers": "Ripeti la riproduzione tra i marcatori di export",
+  "Loop on: playback repeats between the export markers": "Loop attivo: la riproduzione si ripete tra i marcatori di export",
+  "Loop on.": "Loop attivo.",
+  "Loop off.": "Loop disattivato.",
+  "Open Help on the keyboard shortcuts": "Apri l’Aiuto sulle scorciatoie da tastiera",
+  "Show / hide the video and clips panel": "Mostra / nascondi il riquadro video e clip",
   "Glue the selected overlapping clips (G)": "Unisci le clip sovrapposte selezionate (G)",
   "Glue the selected overlapping clips": "Unisci le clip sovrapposte selezionate",
   "Gluing\u2026": "Unione in corso…",
@@ -127,8 +133,8 @@ I18N.register("it", "Italiano", {
   "Compressor input/output transfer curve": "Curva ingresso/uscita del compressore",
   "Input": "Ingresso", "Reduction": "Riduzione", "−∞ dBFS": "−∞ dBFS", "0.0 dB": "0.0 dB",
   "Static curve before native auto makeup. Live meters show actual playback. Native lookahead and stereo linking; no external sidechain or adaptive timing.": "Curva statica prima del makeup automatico nativo. I meter mostrano la riproduzione reale. Lookahead e collegamento stereo nativi; sidechain esterna e tempi adattivi non disponibili.",
-  "Hide video and clips panel": "Nascondi riquadro video e clip",
-  "Show video and clips panel": "Mostra riquadro video e clip",
+  "Hide video and clips panel (V)": "Nascondi riquadro video e clip (V)",
+  "Show video and clips panel (V)": "Mostra riquadro video e clip (V)",
   "Audio effect": "Effetto audio", "Enable effect": "Attiva effetto", "Remove effect": "Rimuovi effetto", "Preset": "Preset", "Hall": "Hall", "Room": "Room", "Plate": "Plate", "Effect visualization": "Visualizzazione effetto",
   "Effects": "Effetti",
   "Equalizer": "Equalizzatore",

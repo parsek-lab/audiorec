@@ -21,7 +21,7 @@ const normalize = text => text.replace(/\s+/g,' ').trim();
 const keys = new Set([...plural.map(([one])=>one),...codeKeys]);
 for(const [, ,text] of page.matchAll(/\s(title|aria-label|placeholder)="([^"]*)"/g)) { const key=normalize(decode(text)); if(/[a-z]/i.test(key)) keys.add(key); }
 for(const [,text] of page.matchAll(/>([^<]+)</g)) { const key=normalize(decode(text)); if(/[a-z]/i.test(key)) keys.add(key); }
-assert.equal(keys.size,462); assert.equal(blocks.size,23);
+assert.equal(keys.size,468); assert.equal(blocks.size,23);
 assert.match(source, /<header class="topbar">[\s\S]*?id="language-button"[^>]*popovertarget="language-menu"/);
 assert.match(source, /id="language-menu"[^>]*popover/);
 assert.match(source, /id="language-options"/);

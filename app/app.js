@@ -60,6 +60,7 @@ async function play() { if (cursor !== null || !videoLength()) startOvertime(); 
 function pause() { if (overPlaying) stopOvertime(); else video.pause(); }
 async function togglePlay() {
   if (!isPlaying()) {
+    const range = loopRange(); if (range && playPosition() >= range.end) seekTo(range.start);
     try { await play(); } catch (error) { status(tr('Playback not started: {message}', { message: error.message })); }
   } else pause();
 }
@@ -201,7 +202,21 @@ async function detectFps() {
   try { value = await mp4Fps(file) ?? await webmFps(file); } catch {}
   if (!setFps(value, file)) measureFps(file);
 }
+// Loop: while the toggle is on (remembered in this browser), playback that reaches the export end restarts from the
+// export start. Playback started before the start runs into the loop; recording never loops.
+let looping = false;
+try { looping = localStorage.getItem('audiorec-loop') === 'on'; } catch {}
+const loopRange = () => { const start = exportIn, end = exportOutTime(); return looping && !recording && end - start > .05 ? { start, end } : null; };
+async function restartLoop() {
+  const range = loopRange(); if (!range) return;
+  pause(); seekTo(range.start); try { await play(); } catch (error) { status(tr('Playback not started: {message}', { message: error.message })); }
+}
+function updateLoopButton() {
+  const button = $('loop'); button.setAttribute('aria-pressed', String(looping)); $('timeline').classList.toggle('looping', looping);
+  button.title = looping ? tr('Loop on: playback repeats between the export markers') : tr('Loop playback between the export markers');
+}
 function animatePlayhead() {
+  const range = loopRange(); if (range && isPlaying() && playPosition() >= range.end) { playheadFrame = null; restartLoop(); return; }
   if (overPlaying && !openEnded() && playPosition() >= timelineEnd()) { playheadFrame = null; stopOvertime(); return; }
   updatePlayhead();
   if (isPlaying() && !(video.ended && !overPlaying)) playheadFrame = requestAnimationFrame(animatePlayhead);
@@ -753,6 +768,8 @@ function cutClips() {
   renderTracks(); syncPlayback(); saveProject();
   status(trn('Clip cut at {time}.', '{count} clips cut at {time}.', cuts.length, { time: formatTime(time) }));
 }
+$('loop').onclick = () => { looping = !looping; try { localStorage.setItem('audiorec-loop', looping ? 'on' : 'off'); } catch {} updateLoopButton(); status(looping ? tr('Loop on.') : tr('Loop off.')); };
+updateLoopButton();
 $('cut-clip').onclick = cutClips; $('glue-clips').onclick = glueClips;
 // Glue: selected, unmuted clips of one track that overlap or touch form a chain; each chain of two or more becomes one
 // clip. It is rendered offline exactly as it plays (clip gains, the crossfades between its members, inner fades), so it
@@ -1955,7 +1972,7 @@ for (const tab of helpTabs) {
 function renderShortcuts() {
   const mouse = { click: tr('click'), drag: tr('drag'), wheel: tr('wheel'), 'double-click': tr('double-click') };
   const groups = [
-    [tr('Playback and recording'), [['Space', tr('Play / pause')], ['*', tr('Start / stop recording')], ['F', tr('Video full screen')], ['+ / -', tr('Move the playhead 1 second')], ['Ctrl++ / Ctrl+-', tr('Move the playhead 10 seconds')], ['Shift++ / Shift+-', tr('Move the playhead 1 frame')], [',', tr('Move the playhead to the export start')], ['.', tr('Move the playhead to the export end')]]],
+    [tr('Playback and recording'), [['Space', tr('Play / pause')], ['*', tr('Start / stop recording')], ['F', tr('Video full screen')], ['V', tr('Show / hide the video and clips panel')], ['H', tr('Open Help on the keyboard shortcuts')], ['+ / -', tr('Move the playhead 1 second')], ['Ctrl++ / Ctrl+-', tr('Move the playhead 10 seconds')], ['Shift++ / Shift+-', tr('Move the playhead 1 frame')], [',', tr('Move the playhead to the export start')], ['.', tr('Move the playhead to the export end')]]],
     [tr('Export range'), [['I', tr('Set the export start at the playhead')], ['O', tr('Set the export end at the playhead')], ['double-click', tr('Reset an export marker')]]],
     [tr('Clips'), [['← / →', tr('Move the selected clips 1 second')], ['Ctrl+← / Ctrl+→', tr('Move the selected clips 10 seconds')], ['Shift+← / Shift+→', tr('Move the selected clips 1 frame')], ['C', tr('Cut the selected clips at the playhead')], ['G', tr('Glue the selected overlapping clips')], ['M', tr('Mute / unmute the selected clips')], ['Del / Backspace', tr('Delete the selected clips')], ['Esc', tr('Clear the selection')], ['Shift+click', tr('Add a clip to the selection')], ['Alt+drag', tr('Duplicate the selected clips')], ['double-click', tr('Rename a track; open the settings of a clip')]]],
     [tr('Undo'), [['Ctrl+Z', tr('Undo')], ['Ctrl+Shift+Z / Ctrl+Y', tr('Redo')]]],
@@ -2084,6 +2101,8 @@ document.addEventListener('keydown', async event => {
     event.preventDefault(); seekTo(event.key === ',' ? exportIn : exportOutTime()); return;
   }
   if (key === 'm' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); toggleClipMute(); return; }
+  if (key === 'h' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); $('help-dialog').showModal(); showHelpTab($('help-tab-keys'), true); return; }
+  if (key === 'v' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); $('video-panel-toggle').click(); return; }
   if (key === 'g' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); glueClips(); return; }
   if (key === 'c' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
@@ -2165,7 +2184,7 @@ function showVideoPanel(open) {
   $('video-panel').hidden = $('splitter').hidden = !open;
   document.querySelector('.app').classList.toggle('video-hidden', !open);
   button.setAttribute('aria-pressed', String(open)); button.setAttribute('aria-expanded', String(open));
-  button.title = open ? tr('Hide video and clips panel') : tr('Show video and clips panel'); button.setAttribute('aria-label', button.title);
+  button.title = open ? tr('Hide video and clips panel (V)') : tr('Show video and clips panel (V)'); button.setAttribute('aria-label', button.title);
   try { localStorage.setItem('audiorec-video-panel', open ? 'shown' : 'hidden'); } catch {}
   const height = document.querySelector('.app').style.getPropertyValue('--video-height');
   if (open && height) setVideoHeight(parseInt(height, 10));
@@ -2214,6 +2233,7 @@ video.addEventListener('seeking', () => { if (cursor !== null && video.currentTi
 video.addEventListener('timeupdate', updatePlayhead);
 video.addEventListener('seeked', () => { syncPlayback(); updatePlayhead(); });
 video.addEventListener('ended', () => {
+  if (loopRange()) { restartLoop(); return; }
   if (timelineEnd() > video.duration + .01) { cursor = video.duration; startOvertime(); return; }
   if (recording) finishRecording(); stopPlayback(); stopPlayhead();
 });

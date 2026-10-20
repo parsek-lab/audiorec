@@ -1,5 +1,11 @@
 // Español interface translation: contextual Google Translate batches with editorial review.
 I18N.register("es", "Español", {
+  "Loop playback between the export markers": "Repetir la reproducción entre los marcadores de exportación",
+  "Loop on: playback repeats between the export markers": "Bucle activo: la reproducción se repite entre los marcadores de exportación",
+  "Loop on.": "Bucle activado.",
+  "Loop off.": "Bucle desactivado.",
+  "Open Help on the keyboard shortcuts": "Abrir la Ayuda en los atajos de teclado",
+  "Show / hide the video and clips panel": "Mostrar / ocultar el panel de vídeo y clips",
   "Glue the selected overlapping clips (G)": "Unir los clips superpuestos seleccionados (G)",
   "Glue the selected overlapping clips": "Unir los clips superpuestos seleccionados",
   "Gluing\u2026": "Uniendo…",
@@ -120,8 +126,8 @@ I18N.register("es", "Español", {
   "{rate} Hz modulation · {depth} ms depth": "Modulación {rate} Hz · profundidad {depth} ms",
   "Add effect": "Añadir efecto",
   "Audio effect": "Efecto de audio", "Enable effect": "Activar efecto", "Remove effect": "Eliminar efecto", "Preset": "Preajuste", "Hall": "Sala grande", "Room": "Habitación", "Plate": "Placa", "Effect visualization": "Visualización del efecto",
-  "Hide video and clips panel": "Ocultar panel de vídeo y clips",
-  "Show video and clips panel": "Mostrar panel de vídeo y clips",
+  "Hide video and clips panel (V)": "Ocultar panel de vídeo y clips (V)",
+  "Show video and clips panel (V)": "Mostrar panel de vídeo y clips (V)",
   "Compressor": "Compresor", "Enable compressor": "Activar compresor", "Remove compressor": "Eliminar compresor",
   "Compressor input/output transfer curve": "Curva de entrada/salida del compresor",
   "Input": "Entrada", "Reduction": "Reducción", "−∞ dBFS": "−∞ dBFS", "0.0 dB": "0.0 dB",

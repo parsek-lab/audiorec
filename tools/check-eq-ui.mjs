@@ -322,6 +322,29 @@ try {
     tab.click();const shown=!panel.hidden&&document.getElementById('help-tracks').hidden;document.getElementById('help-tab-files').click();
     return atStart&&atEnd&&typing&&shown&&tab.getAttribute('aria-controls')==='help-keys'&&panel.querySelectorAll('tr').length>=24&&[',','.','I','O','Space','*','W','C','M'].every(k=>keys.includes(k));
   })()`), 'Comma and period jump to the export markers (not while typing); Help lists all shortcuts');
+  // Loop toggle: playback that reaches the export end restarts at the export start; Play after the end jumps to the start.
+  const loop = await evaluate(`(async()=>{
+    const button=document.getElementById('loop'),off=button.getAttribute('aria-pressed')==='false';
+    timelineLength=10;exportIn=1;exportOut=1.3;button.click();const on=button.getAttribute('aria-pressed')==='true'&&localStorage.getItem('audiorec-loop')==='on'&&document.getElementById('timeline').classList.contains('looping');
+    seekTo(1.25);await togglePlay();await new Promise(r=>setTimeout(r,450));const position=playPosition(),playing=isPlaying();pause();
+    seekTo(5);await togglePlay();const jumped=playPosition()<1.1;pause();
+    button.click();seekTo(1.25);await togglePlay();await new Promise(r=>setTimeout(r,300));const unlooped=playPosition();pause();
+    exportIn=0;exportOut=null;timelineLength=null;seekTo(0);
+    return {off,on,position:+position.toFixed(3),playing,jumped,unlooped:+unlooped.toFixed(3),stored:localStorage.getItem('audiorec-loop')};
+  })()`);
+  assert(loop.off && loop.on && loop.position >= 1 && loop.position < 1.3 && loop.playing && loop.jumped && loop.unlooped > 1.4 && loop.stored === 'off', `Loop between the export markers: ${JSON.stringify(loop)}`);
+  // H opens Help on the keyboard shortcuts tab.
+  assert(await evaluate(`(()=>{
+    document.dispatchEvent(new KeyboardEvent('keydown',{key:'h',code:'KeyH',bubbles:true,cancelable:true}));
+    const dialog=document.getElementById('help-dialog'),ok=dialog.open&&!document.getElementById('help-keys').hidden&&document.activeElement===document.getElementById('help-tab-keys');
+    dialog.close();document.getElementById('help-tab-files').click();return ok;
+  })()`), 'H opens Help on the shortcuts tab');
+  // V shows / hides the video and clips panel, not while typing.
+  assert(await evaluate(`(()=>{
+    const panel=document.getElementById('video-panel'),start=panel.hidden,press=(t=document)=>t.dispatchEvent(new KeyboardEvent('keydown',{key:'v',code:'KeyV',bubbles:true,cancelable:true}));
+    press();const toggled=panel.hidden!==start;const field=document.getElementById('timeline-length');field.focus();press(field);const typing=panel.hidden!==start;field.blur();press();
+    return toggled&&typing&&panel.hidden===start&&document.getElementById('video-panel-toggle').title.endsWith('(V)');
+  })()`), 'V toggles the video panel');
   // Recording: direct track capture where available, AudioWorklet otherwise; the take must match the elapsed time.
   for (const direct of [true, false]) {
     const take = await evaluate(`(async()=>{

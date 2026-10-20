@@ -1,5 +1,11 @@
 // Русский interface translation: contextual Google Translate batches with editorial review.
 I18N.register("ru", "Русский", {
+  "Loop playback between the export markers": "Повторять воспроизведение между маркерами экспорта",
+  "Loop on: playback repeats between the export markers": "Повтор включён: воспроизведение повторяется между маркерами экспорта",
+  "Loop on.": "Повтор включён.",
+  "Loop off.": "Повтор выключен.",
+  "Open Help on the keyboard shortcuts": "Открыть справку на сочетаниях клавиш",
+  "Show / hide the video and clips panel": "Показать / скрыть панель видео и клипов",
   "Glue the selected overlapping clips (G)": "Склеить выбранные перекрывающиеся клипы (G)",
   "Glue the selected overlapping clips": "Склеить выбранные перекрывающиеся клипы",
   "Gluing\u2026": "Склейка…",
@@ -120,8 +126,8 @@ I18N.register("ru", "Русский", {
   "{rate} Hz modulation · {depth} ms depth": "Модуляция {rate} Гц · глубина {depth} мс",
   "Add effect": "Добавить эффект",
   "Audio effect": "Аудиоэффект", "Enable effect": "Включить эффект", "Remove effect": "Удалить эффект", "Preset": "Пресет", "Hall": "Зал", "Room": "Комната", "Plate": "Пластина", "Effect visualization": "Визуализация эффекта",
-  "Hide video and clips panel": "Скрыть панель видео и клипов",
-  "Show video and clips panel": "Показать панель видео и клипов",
+  "Hide video and clips panel (V)": "Скрыть панель видео и клипов (V)",
+  "Show video and clips panel (V)": "Показать панель видео и клипов (V)",
   "Compressor": "Компрессор", "Enable compressor": "Включить компрессор", "Remove compressor": "Удалить компрессор",
   "Compressor input/output transfer curve": "Входная/выходная характеристика компрессора",
   "Input": "Вход", "Reduction": "Ослабление", "−∞ dBFS": "−∞ dBFS", "0.0 dB": "0.0 dB",
