@@ -118,7 +118,7 @@ registerProcessor('audiorec-pitch-v1',AudiorecPitch);
 const utilityWorklets = new WeakMap();
 function prepareTrackEffects(audio, items) {
   if (!items.some(t => trackEffects(t).some(e => Object.hasOwn(WORKLET_EFFECTS, e.type)))) return Promise.resolve();
-  if (!audio.audioWorklet) return Promise.reject(new Error('Expander and pitch shifter require AudioWorklet on localhost or HTTPS.'));
+  if (!audio.audioWorklet) return Promise.reject(new Error(tr('Expander and pitch shifter require AudioWorklet on localhost or HTTPS.')));
   if (!utilityWorklets.has(audio)) {
     const url = URL.createObjectURL(new Blob([EXPANDER_PROCESSOR_SOURCE, PITCH_PROCESSOR_SOURCE], { type: 'text/javascript' }));
     const ready = audio.audioWorklet.addModule(url).catch(error => { utilityWorklets.delete(audio); throw error; }).finally(() => URL.revokeObjectURL(url));
@@ -148,7 +148,7 @@ function connectUtilityEffect(audio, effect, analyse = false) {
     const node = new AudioWorkletNode(audio, WORKLET_EFFECTS[effect.type], { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max', processorOptions: { meter: analyse, window: effect.settings.window } });
     const entry = { effect, input: node, output: node, nodes: [node], processor: node, reduction: 0 };
     node.port.onmessage = event => { entry.reduction = event.data; };
-    node.onprocessorerror = () => status(`${UTILITY_EFFECTS[effect.type].name}: processing failed. Stop playback and reload the project.`);
+    node.onprocessorerror = () => status(tr('Effect processing failed ({effect}). Stop playback and reload the project.', { effect: UTILITY_EFFECTS[effect.type].name }));
     entry.dispose = () => { node.port.postMessage('stop'); node.port.close(); };
     setUtilityNodes(entry); return entry;
   }
@@ -263,8 +263,6 @@ function drawUtilityEffect() {
   utilityFrame = requestAnimationFrame(drawUtilityEffect);
 }
 window.addEventListener('DOMContentLoaded', () => {
-  $('utility-enabled').onchange = () => { changeEQ(() => { utilityEffect.settings.enabled = $('utility-enabled').checked; }); markBypass('utility-dialog', utilityEffect); };
   $('reverb-preset').onchange = () => { changeEQ(() => { utilityEffect.settings.preset = $('reverb-preset').value; utilityEffect.settings.decay = REVERB_DECAYS[utilityEffect.settings.preset]; }); finishKnob?.(); renderUtilityControls(utilityEffect); };
-  $('utility-remove').onclick = () => { changeEQ(() => eqTrack.effects.splice(eqTrack.effects.indexOf(utilityEffect), 1)); syncPlayback(); $('utility-dialog').close(); renderEffectsList(); };
-  $('utility-dialog').addEventListener('close', () => { finishKnob?.(); cancelAnimationFrame(utilityFrame); utilityEffect = null; if (eqTrack) renderEffectsList(); });
+  wireEffectDialog('utility', () => utilityEffect, () => { cancelAnimationFrame(utilityFrame); utilityEffect = null; });
 });

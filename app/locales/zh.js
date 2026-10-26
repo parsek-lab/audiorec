@@ -1,7 +1,12 @@
 // 简体中文 interface translation: contextual Google Translate batches with editorial review.
 I18N.register("zh", "简体中文", {
-  "Loop playback between the export markers": "在导出标记之间循环播放",
-  "Loop on: playback repeats between the export markers": "循环已开启：在导出标记之间重复播放",
+  "change effects": "更改效果",
+  "change effect": "调整效果",
+  "Effects unavailable: {message}": "效果不可用：{message}",
+  "Effect processing failed ({effect}). Stop playback and reload the project.": "效果处理失败（{effect}）。请停止播放并重新加载项目。",
+  "Expander and pitch shifter require AudioWorklet on localhost or HTTPS.": "扩展器和变调器需要在 localhost 或 HTTPS 下使用 AudioWorklet。",
+  "Loop playback between the export markers (L)": "在导出标记之间循环播放 (L)",
+  "Loop on: playback repeats between the export markers (L)": "循环已开启：在导出标记之间重复播放 (L)",
   "Loop on.": "循环已开启。",
   "Loop off.": "循环已关闭。",
   "Open Help on the keyboard shortcuts": "打开帮助中的键盘快捷键",
@@ -49,6 +54,7 @@ I18N.register("zh", "简体中文", {
   "double-click": "双击",
   "Playback and recording": "播放与录音",
   "Play / pause": "播放 / 暂停",
+  "Loop playback on / off": "开启 / 关闭循环播放",
   "Start / stop recording": "开始 / 停止录音",
   "Video full screen": "视频全屏",
   "Move the playhead to the export start": "将播放头移到导出起点",

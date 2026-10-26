@@ -85,7 +85,5 @@ function drawCompressor() {
   compressorFrame = requestAnimationFrame(drawCompressor);
 }
 window.addEventListener('DOMContentLoaded', () => {
-  $('compressor-enabled').onchange = () => { changeEQ(() => { compressorEffect.compressor.enabled = $('compressor-enabled').checked; }); markBypass('compressor-dialog', compressorEffect); };
-  $('compressor-remove').onclick = () => { changeEQ(() => eqTrack.effects.splice(eqTrack.effects.indexOf(compressorEffect), 1)); syncPlayback(); $('compressor-dialog').close(); renderEffectsList(); };
-  $('compressor-dialog').addEventListener('close', () => { finishKnob?.(); cancelAnimationFrame(compressorFrame); compressorEffect = null; if (eqTrack) renderEffectsList(); });
+  wireEffectDialog('compressor', () => compressorEffect, () => { cancelAnimationFrame(compressorFrame); compressorEffect = null; });
 });

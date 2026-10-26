@@ -213,7 +213,7 @@ async function restartLoop() {
 }
 function updateLoopButton() {
   const button = $('loop'); button.setAttribute('aria-pressed', String(looping)); $('timeline').classList.toggle('looping', looping);
-  button.title = looping ? tr('Loop on: playback repeats between the export markers') : tr('Loop playback between the export markers');
+  button.title = looping ? tr('Loop on: playback repeats between the export markers (L)') : tr('Loop playback between the export markers (L)');
 }
 function animatePlayhead() {
   const range = loopRange(); if (range && isPlaying() && playPosition() >= range.end) { playheadFrame = null; restartLoop(); return; }
@@ -231,7 +231,6 @@ function stopPlayhead() {
 // buffer on every getChannelData call, so repeated calls from the meters made playback fade within seconds.
 const channels = new WeakMap();
 const channelData = (buffer, c = 0) => { let list = channels.get(buffer); if (!list) channels.set(buffer, list = []); return list[c] ??= buffer.getChannelData(c); };
-const channel = buffer => channelData(buffer);
 const clipChannels = buffer => Array.from({ length: buffer.numberOfChannels }, (_, c) => channelData(buffer, c));
 // The project runs at 48 kHz and clips are mono or stereo: other rates are resampled and more channels are folded to
 // stereo with Web Audio's speaker down-mix (5.1 keeps its centre and surrounds in the mix).
@@ -295,7 +294,7 @@ function projectData() {
   return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, visible: t.visible !== false, volume: t.volume ?? 1, color: trackColor(t), effects: copyEffects(t),
       pan: t.pan ?? 0, clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted, gain: c.gain ?? 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0,
-        sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)), ...(c.buffer.numberOfChannels > 1 && { samplesRight: new Float32Array(channelData(c.buffer, 1)) }) })) })) };
+        sampleRate: c.buffer.sampleRate, samples: new Float32Array(channelData(c.buffer)), ...(c.buffer.numberOfChannels > 1 && { samplesRight: new Float32Array(channelData(c.buffer, 1)) }) })) })) };
 }
 function saveProject() {
   if (restoring) return saveQueue;
@@ -349,7 +348,7 @@ async function restoreProject() {
     status(tr('Local storage unavailable: {message}', { message: error.message }));
   } finally {
     restoring = false; clearHistory(); renderTracks();
-    for (const id of ['video-file', 'add-track', 'import-audio', 'clip-import', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = false;
+    for (const id of PROJECT_BUTTONS) $(id).disabled = false;
   }
 }
 function formatSpan(seconds) {
@@ -576,7 +575,7 @@ function editClip(event, clip, mode, element) {
 }
 
 // Matched against the English source of a message (I18N.sourceOf), so it keeps working in every language.
-const STATUS_ERROR = /^(Invalid length|Could not|Local save failed|Local storage unavailable|Microphone|Devices unavailable|Playback not started|Recording not started|Audio output:|Enable REC|Stop recording before|No unmuted|Recording too long)/;
+const STATUS_ERROR = /^(Invalid length|Could not|Local save failed|Local storage unavailable|Microphone|Devices unavailable|Playback not started|Recording not started|Audio output:|Enable REC|Stop recording before|No unmuted|Recording too long|Effects unavailable|Effect processing failed)/;
 let statusTimer = null;
 const status = text => {
   const box = $('status');
@@ -630,10 +629,7 @@ function clearHistory() { undoStack.length = 0; redoStack.length = 0; selectedCl
 function travel(from, to, verb) {
   if (recording) { status(verb === 'Undo' ? tr('Stop recording before undoing.') : tr('Stop recording before redoing.')); return; }
   if (!from.length) return;
-  if ($('utility-dialog').open) $('utility-dialog').close();
-  if ($('compressor-dialog').open) $('compressor-dialog').close();
-  if ($('eq-dialog').open) $('eq-dialog').close();
-  if ($('fx-dialog').open) $('fx-dialog').close();
+  closeEffectDialogs(); if ($('fx-dialog').open) $('fx-dialog').close();
   const { label, state } = from.pop();
   to.push({ label, state: snapshot() });
   tracks.splice(0, tracks.length, ...state.tracks.map(t => ({ ...t, effects: copyEffects(t), clips: t.clips.map(c => ({ ...c })) }))); nextId = state.nextId; timelineLength = state.length ?? null;
@@ -727,7 +723,7 @@ async function importAudio(files, track = tracks.find(t => t.armed) ?? tracks[0]
   for (const file of files) {
     try {
       const decoded = await audio.decodeAudioData(await file.arrayBuffer()), buffer = await adaptAudio(decoded);
-      clips.push({ name: file.name.replace(/\.[^.]+$/, '') || tr('Clip'), start: Math.max(0, start), trimStart: 0, trimEnd: 0, buffer }); start += decoded.duration;
+      clips.push({ name: file.name.replace(/\.[^.]+$/, '') || tr('Clip'), start: Math.max(0, start), trimStart: 0, trimEnd: 0, muted: false, gain: 1, fadeIn: 0, fadeOut: 0, buffer }); start += decoded.duration;
     } catch { failed.push(file.name); }
   }
   if (!tracks.includes(track) || recording) return;
@@ -807,15 +803,15 @@ async function glueClips() {
   try {
     const glued = [];
     for (const { track, clips } of chains) {
-      const start = Math.min(...clips.map(c => c.start)), end = Math.max(...clips.map(c => c.start + clipDuration(c))), rate = Math.max(...clips.map(c => c.buffer.sampleRate));
+      const start = Math.min(...clips.map(c => c.start)), end = Math.max(...clips.map(c => c.start + clipDuration(c))), rate = PROJECT_RATE;
       const first = clips.find(c => c.start === start), last = clips.findLast(c => c.start + clipDuration(c) === end);
       const offline = new OfflineAudioContext(Math.max(...clips.map(c => c.buffer.numberOfChannels)), Math.max(1, Math.round((end - start) * rate)), rate);
       for (const clip of clips) {
         const fades = clipFades({ clips }, clip), node = offline.createBufferSource(), gain = offline.createGain();
         if (clip === first) fades.in = 0; if (clip === last) fades.out = 0;
-        node.buffer = clip.buffer; node.connect(gain); gain.connect(offline.destination);
+        const level = new GainNode(offline, { gain: clip.gain ?? 1 });
+        node.buffer = clip.buffer; node.connect(gain).connect(level).connect(offline.destination);
         scheduleFades(gain.gain, clip.start - start, 0, fades);
-        const level = clip.gain ?? 1; if (level !== 1) { const scale = offline.createGain(); scale.gain.value = level; gain.disconnect(); gain.connect(scale); scale.connect(offline.destination); }
         node.start(clip.start - start, clip.trimStart || 0, clipDuration(clip));
       }
       const buffer = await offline.startRendering();
@@ -860,20 +856,32 @@ async function addTrack() {
 }
 // Waveform colors are theme tokens (--wave, --wave-video, --wave-rec in style.css), read when a canvas is drawn.
 const themeColor = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// Waveforms are cached per buffer for the current size and color: renderTracks rebuilds the timeline on every edit, and
+// scanning every sample again made each edit slow on long takes. A buffer drawn twice in one render (a duplicated clip)
+// gets a copy of the cached canvas; renderTracks counts its renders in waveRender for that.
+const waveCache = new WeakMap();
+let waveRender = 0;
 function drawWaveform(clip) {
   const width = Math.ceil(clip.buffer.duration * pxPerSecond), height = 44;
   if (width < 1) return null;
-  const canvas = document.createElement('canvas'), ratio = window.devicePixelRatio || 1;
-  canvas.className = 'clip-wave'; canvas.width = Math.min(16000, Math.ceil(width * ratio)); canvas.height = Math.ceil(height * ratio);
-  canvas.style.width = `${width}px`; canvas.style.left = `${-(clip.trimStart || 0) * pxPerSecond}px`;
-  const g = canvas.getContext('2d'), planes = clipChannels(clip.buffer), step = planes[0].length / canvas.width, middle = canvas.height / 2;
-  g.fillStyle = themeColor('--wave');
-  for (let x = 0; x < canvas.width; x++) {
-    let peak = 0;
-    for (const data of planes) for (let i = Math.floor(x * step), end = Math.min(data.length, Math.floor((x + 1) * step)); i < end; i++) peak = Math.max(peak, Math.abs(data[i]));
-    const bar = Math.max(ratio / 2, Math.min(1, peak * 1.6) * middle * .85);
-    g.fillRect(x, middle - bar, 1, bar * 2);
+  const ratio = window.devicePixelRatio || 1, color = themeColor('--wave'), key = `${width}:${ratio}:${color}`, cached = waveCache.get(clip.buffer);
+  let canvas = cached?.key === key ? cached.canvas : null;
+  if (canvas && cached.render === waveRender) { const copy = canvas.cloneNode(); copy.getContext('2d').drawImage(canvas, 0, 0); canvas = copy; }
+  else if (cached && canvas) cached.render = waveRender;
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.className = 'clip-wave'; canvas.width = Math.min(16000, Math.ceil(width * ratio)); canvas.height = Math.ceil(height * ratio); canvas.style.width = `${width}px`;
+    const g = canvas.getContext('2d'), planes = clipChannels(clip.buffer), step = planes[0].length / canvas.width, middle = canvas.height / 2;
+    g.fillStyle = color;
+    for (let x = 0; x < canvas.width; x++) {
+      let peak = 0;
+      for (const data of planes) for (let i = Math.floor(x * step), end = Math.min(data.length, Math.floor((x + 1) * step)); i < end; i++) peak = Math.max(peak, Math.abs(data[i]));
+      const bar = Math.max(ratio / 2, Math.min(1, peak * 1.6) * middle * .85);
+      g.fillRect(x, middle - bar, 1, bar * 2);
+    }
+    waveCache.set(clip.buffer, { key, canvas, render: waveRender });
   }
+  canvas.style.left = `${-(clip.trimStart || 0) * pxPerSecond}px`;
   return canvas;
 }
 // Read-only row with the video's own audio: peaks decoded once per file, drawn in segments around the visible area.
@@ -948,7 +956,6 @@ function showOutputLevel(element, peak) {
   if (peak >= .99) element.parentElement.dataset.clipUntil = performance.now() + 1000;
   element.parentElement.classList.toggle('clipping', performance.now() < (+element.parentElement.dataset.clipUntil || 0));
 }
-const hidden = isHidden;
 const trackPeak = (track, time) => {
   if (track.muted || isHidden(track)) return 0;
   let peak = 0;
@@ -990,6 +997,7 @@ function updateOutputMeters() {
 }
 const startOutputMeters = () => { outputMeterFrame ??= requestAnimationFrame(updateOutputMeters); };
 function renderTracks() {
+  waveRender++;
   const armed = tracks.filter(t => t.armed && !isHidden(t));
   if (tracks.length && armed.length !== 1) armTrack(armed[0] ?? tracks.find(t => !isHidden(t)) ?? tracks[0]);
   renderTimeline();
@@ -1267,35 +1275,35 @@ function connectPan(audio, track, destination) {
   const set = (pan, smooth) => panGains(pan).forEach((value, i) => { const param = (i ? right : left).gain; if (smooth) param.setTargetAtTime(value, audio.currentTime, .02); else param.value = value; });
   set(track.pan ?? 0); return { input, nodes: [input, split, left, right, merge], set };
 }
+// Schedules a track's audible clips on an audio context: timeline time `from` sounds at context time `at`; clips starting
+// at or after `until` are skipped. Playback and export both use it, so they build the same graph: source -> fades ->
+// clip and track gain -> effects -> pan.
+function scheduleTrack(audio, track, from, at, until = Infinity, analyse = false) {
+  let chain = null; const sources = [];
+  for (const clip of track.clips) {
+    const duration = clipDuration(clip), elapsed = Math.max(0, from - clip.start);
+    if (clip.muted || duration <= 0 || elapsed >= duration || clip.start >= until) continue;
+    const startTime = at + Math.max(0, clip.start - from), node = audio.createBufferSource(), gain = audio.createGain(), level = new GainNode(audio, { gain: (track.volume ?? 1) * (clip.gain ?? 1) });
+    if (!chain) {
+      const input = audio.createGain(), pan = connectPan(audio, track, audio.destination); chain = connectTrackEQ(audio, track, input, pan.input, analyse);
+      chain.input = input; chain.pan = pan; chain.nodes.unshift(input); chain.nodes.push(...pan.nodes);
+    }
+    node.buffer = clip.buffer; node.connect(gain).connect(level).connect(chain.input);
+    scheduleFades(gain.gain, startTime, elapsed, clipFades(track, clip));
+    node.start(startTime, (clip.trimStart || 0) + elapsed, duration - elapsed);
+    sources.push({ node, gain, level, track, clip, eqChain: chain });
+  }
+  return sources;
+}
 async function syncPlayback() {
   stopPlayback();
   if (!isPlaying() || recording || !context) return;
   const revision = playbackRevision;
-  try { await prepareTrackEffects(context, tracks); } catch (error) { if (revision === playbackRevision) { status(`Effects unavailable: ${error.message}`); pause(); } return; }
+  try { await prepareTrackEffects(context, tracks); } catch (error) { if (revision === playbackRevision) { status(tr('Effects unavailable: {message}', { message: error.message })); pause(); } return; }
   if (revision !== playbackRevision || !isPlaying() || recording) return;
   const now = playPosition();
-  for (const track of tracks) {
-    if (track.muted || isHidden(track)) continue;
-    // Tracks with latency (pitch shifter) are fed ahead of the playhead so their output lands on time.
-    let eqChain = null; const at = now + trackLatency(track, context.sampleRate);
-    for (const clip of track.clips) {
-      const elapsed = Math.max(0, at - clip.start);
-      const duration = clipDuration(clip);
-      if (clip.muted || duration <= 0 || elapsed >= duration) continue;
-      const offset = (clip.trimStart || 0) + elapsed;
-      const startTime = context.currentTime + Math.max(0, clip.start - at);
-      const node = context.createBufferSource(), gain = context.createGain(), level = context.createGain();
-      level.gain.value = (track.volume ?? 1) * (clip.gain ?? 1);
-      if (!eqChain) {
-        const input = context.createGain(), pan = connectPan(context, track, context.destination); eqChain = connectTrackEQ(context, track, input, pan.input, true);
-        eqChain.input = input; eqChain.pan = pan; eqChain.nodes.unshift(input); eqChain.nodes.push(...pan.nodes);
-      }
-      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(eqChain.input);
-      scheduleFades(gain.gain, startTime, elapsed, clipFades(track, clip));
-      node.start(startTime, offset, duration - elapsed);
-      playingSources.push({ node, gain, level, track, clip, eqChain });
-    }
-  }
+  // Tracks with latency (pitch shifter) are fed ahead of the playhead so their output lands on time.
+  for (const track of tracks) if (!track.muted && !isHidden(track)) playingSources.push(...scheduleTrack(context, track, now + trackLatency(track, context.sampleRate), context.currentTime, Infinity, true));
 }
 async function listDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -1480,9 +1488,9 @@ function finishRecording() {
     const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     if (length) {
       const buffer = context.createBuffer(1, length, sampleRate);
-      const data = channel(buffer); let position = 0;
+      const data = channelData(buffer); let position = 0;
       for (const chunk of chunks) { data.set(chunk, position); position += chunk.length; }
-      const clip = { name: nextClipName(track), start, buffer }; track.clips.push(clip);
+      const clip = { name: nextClipName(track), start, trimStart: 0, trimEnd: 0, muted: false, gain: 1, fadeIn: 0, fadeOut: 0, buffer }; track.clips.push(clip);
       if (buffer.sampleRate !== PROJECT_RATE) adaptAudio(buffer).then(adapted => { clip.buffer = adapted; renderTracks(); saveProject(); });
     }
     delete track.pending;
@@ -1553,7 +1561,7 @@ async function saveProjectFile() {
     // Without the File System Access API, download straight away: the browser's own Save As window (when enabled) names
     // the file. An in-app name prompt confirmed with Enter left the Windows pointer hidden over that window.
     if (!window.showSaveFilePicker) {
-      const fileName = suggested.replace(/[\/:*?"<>|]/g, '-');
+      const fileName = safeFileName(suggested);
       downloadBlob(blob, fileName);
       showProjectName(fileName); saveProject();
       status(tr('Project downloaded as {file} (this browser cannot overwrite files).', { file: fileName }));
@@ -1578,7 +1586,7 @@ async function openProject(file, handle = null) {
     const jsonLength = view.getUint32(8, true);
     if (jsonLength > bytes.byteLength - 12) throw new Error(tr('incomplete file'));
     const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
-    if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
+    if (!Number.isInteger(manifest.version) || manifest.version < 1 || manifest.version > 13 || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
     if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error(tr('invalid length'));
     let position = 12 + jsonLength;
     const videoSize = manifest.video?.size || 0;
@@ -1641,18 +1649,17 @@ const canExportVideo = 'AudioEncoder' in window && 'EncodedAudioChunk' in window
 let exporting = null, decodedVideoAudio = null;
 const exportVideoAudio = { audio: false, video: true };
 const exportKind = () => document.querySelector('input[name="export-kind"]:checked').value;
-const videoDuration = () => selectedVideo && Number.isFinite(video.duration) ? video.duration : 0;
-const exportBaseName = () => (projectName || 'project').replace(/\.audiorec$/i, '').replace(/[\/:*?"<>|]/g, '-');
+const exportBaseName = () => safeFileName((projectName || 'project').replace(/\.audiorec$/i, ''), 'project');
 const exportFileName = kind => `${exportBaseName()}${kind === 'video' ? '.mp4' : '-audio.wav'}`;
 function defaultExportEnd(kind) {
   const end = projectLength() || clipsEnd();
-  return kind === 'video' ? Math.min(end || videoDuration(), videoDuration()) : end;
+  return kind === 'video' ? Math.min(end || videoLength(), videoLength()) : end;
 }
 function readExportRange() {
   const start = $('export-start').value.trim() ? parseLength($('export-start').value) : 0, end = parseLength($('export-end').value);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return { error: tr('Start and end: use mm:ss:ff, mm:ss or seconds.') };
   if (end <= start) return { error: tr('The end must come after the start.') };
-  if (exportKind() === 'video' && end > videoDuration() + .001) return { error: tr('The video ends at {time}.', { time: formatTime(videoDuration()) }) };
+  if (exportKind() === 'video' && end > videoLength() + .001) return { error: tr('The video ends at {time}.', { time: formatTime(videoLength()) }) };
   return { start, end };
 }
 function setExportRange(start, end) { $('export-start').value = formatTime(start); $('export-end').value = formatTime(end); updateExportDialog(); }
@@ -1667,7 +1674,7 @@ function updateExportDialog() {
 }
 function openExport() {
   if (recording) finishRecording();
-  const hasVideo = videoDuration() > 0, videoRadio = $('export-kind-video');
+  const hasVideo = videoLength() > 0, videoRadio = $('export-kind-video');
   videoRadio.disabled = !hasVideo || !canExportVideo;
   $('export-video-hint').textContent = !hasVideo ? tr('Choose a video first') : !canExportVideo ? tr('Not supported in this browser') : tr('MP4: original picture, new soundtrack');
   if (videoRadio.disabled && videoRadio.checked) document.querySelector('input[name="export-kind"][value="audio"]').checked = true;
@@ -1676,14 +1683,14 @@ function openExport() {
   $('export-dialog').showModal();
 }
 for (const radio of document.querySelectorAll('input[name="export-kind"]')) radio.onchange = () => {
-  if (exportKind() === 'video' && parseLength($('export-end').value) > videoDuration()) $('export-end').value = formatTime(defaultExportEnd('video'));
+  if (exportKind() === 'video' && parseLength($('export-end').value) > videoLength()) $('export-end').value = formatTime(defaultExportEnd('video'));
   updateExportDialog();
 };
 $('export-video-audio').onchange = event => { exportVideoAudio[exportKind()] = event.target.checked; };
 for (const id of ['export-start', 'export-end']) $(id).addEventListener('input', updateExportDialog);
 $('export-start-playhead').onclick = () => { $('export-start').value = formatTime(playPosition()); updateExportDialog(); };
 $('export-end-playhead').onclick = () => { $('export-end').value = formatTime(playPosition()); updateExportDialog(); };
-function setMarkerRange() { const end = exportOutTime(); setExportRange(exportIn, exportKind() === 'video' ? Math.min(end, videoDuration()) : end); }
+function setMarkerRange() { const end = exportOutTime(); setExportRange(exportIn, exportKind() === 'video' ? Math.min(end, videoLength()) : end); }
 $('export-markers').onclick = setMarkerRange;
 $('export-whole').onclick = () => setExportRange(0, defaultExportEnd(exportKind()));
 $('export-selection').onclick = () => {
@@ -1693,13 +1700,13 @@ $('export-selection').onclick = () => {
 $('export-cancel').onclick = $('export-close').onclick = () => $('export-dialog').close();
 $('export-dialog').addEventListener('close', () => { if (exporting) { exporting.canceled = true; exporting.conversion?.cancel(); } });
 $('export-dialog').querySelector('form').onsubmit = event => { event.preventDefault(); runExport(); };
-async function decodeVideoAudio(rate) {
-  if (decodedVideoAudio?.file === selectedVideo && decodedVideoAudio.rate === rate) return decodedVideoAudio.buffer;
+async function decodeVideoAudio() {
+  if (decodedVideoAudio?.file === selectedVideo) return decodedVideoAudio.buffer;
   if (selectedVideo.size > 1.5e9) throw new Error(tr('the video is too large to read its audio'));
   let buffer;
-  try { buffer = await new OfflineAudioContext(2, 1, rate).decodeAudioData(await selectedVideo.arrayBuffer()); }
+  try { buffer = await new OfflineAudioContext(2, 1, PROJECT_RATE).decodeAudioData(await selectedVideo.arrayBuffer()); }
   catch { throw new Error(tr('the video audio could not be read')); }
-  decodedVideoAudio = { file: selectedVideo, rate, buffer };
+  decodedVideoAudio = { file: selectedVideo, buffer };
   return buffer;
 }
 async function renderMix(start, end, rate, channels, videoBuffer) {
@@ -1714,22 +1721,8 @@ async function renderMix(start, end, rate, channels, videoBuffer) {
     node.buffer = videoBuffer; level.gain.value = videoGain;
     node.connect(level); level.connect(offline.destination); node.start(lead, start);
   }
-  for (const track of tracks) {
-    if (track.muted || isHidden(track)) continue;
-    // Offline time 0 is lead before the export start; latency-compensated tracks read further ahead.
-    let eqInput = null; const from = start - lead + trackLatency(track, rate);
-    for (const clip of track.clips) {
-      const duration = clipDuration(clip), elapsed = Math.max(0, from - clip.start);
-      if (clip.muted || duration <= 0 || elapsed >= duration || clip.start >= end - start + from) continue;
-      const startTime = Math.max(0, clip.start - from);
-      const node = offline.createBufferSource(), gain = offline.createGain(), level = offline.createGain();
-      level.gain.value = (track.volume ?? 1) * (clip.gain ?? 1);
-      if (!eqInput) { eqInput = offline.createGain(); connectTrackEQ(offline, track, eqInput, connectPan(offline, track, offline.destination).input); }
-      node.buffer = clip.buffer; node.connect(gain); gain.connect(level); level.connect(eqInput);
-      scheduleFades(gain.gain, startTime, elapsed, clipFades(track, clip));
-      node.start(startTime, (clip.trimStart || 0) + elapsed, duration - elapsed);
-    }
-  }
+  // Offline time 0 is lead before the export start; latency-compensated tracks read further ahead.
+  for (const track of audible) { const from = start - lead + trackLatency(track, rate); scheduleTrack(offline, track, from, 0, end - start + from); }
   const rendered = await offline.startRendering(); if (!preroll) return rendered;
   const mix = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
   for (let c = 0; c < channels; c++) mix.copyToChannel(rendered.getChannelData(c).subarray(preroll, preroll + length), c);
@@ -1753,7 +1746,7 @@ function downloadBlob(blob, name) {
   link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || tr('Clip');
+const safeFileName = (name, fallback = tr('Clip')) => name.replace(/[\\/:*?"<>|]/g, '-').trim() || fallback;
 // One clip as it plays: trimmed, with the playback fades, without the track volume.
 function clipWav(clip) {
   const rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
@@ -1837,7 +1830,7 @@ async function runExport() {
   $('export-ok').disabled = true;
   try {
     const rate = PROJECT_RATE;
-    const videoBuffer = withVideoAudio ? await decodeVideoAudio(rate) : null;
+    const videoBuffer = withVideoAudio ? await decodeVideoAudio() : null;
     if (job.canceled) return;
     $('export-summary').textContent = tr('Mixing…');
     const audible = tracks.filter(t => !t.muted && !isHidden(t)), stereo = kind === 'video' || videoBuffer?.numberOfChannels > 1 || audible.some(t => (t.pan ?? 0) !== 0 || t.clips.some(c => !c.muted && c.buffer.numberOfChannels > 1));
@@ -1854,12 +1847,11 @@ async function runExport() {
     if (!job.canceled) status(tr('Export failed: {message}', { message: error.message }));
   } finally {
     if (exporting === job) exporting = null;
-    for (const element of $('export-dialog').querySelectorAll('input')) element.disabled = false;
-    for (const element of $('export-dialog').querySelectorAll('.export-range button')) element.disabled = false;
+    for (const element of $('export-dialog').querySelectorAll('input, .export-range button')) element.disabled = false;
     if ($('export-dialog').open) { progress.hidden = true; openExportControls(); }
   }
 }
-function openExportControls() { $('export-kind-video').disabled = videoDuration() <= 0 || !canExportVideo; updateExportDialog(); }
+function openExportControls() { $('export-kind-video').disabled = videoLength() <= 0 || !canExportVideo; updateExportDialog(); }
 function loadVideo(file) {
   if (!file) return;
   stopOvertime(); cursor = null;
@@ -1899,7 +1891,7 @@ $('video-audio-volume').onclick = () => openVolume($('video-audio-volume'), { ti
 $('video-audio-mute').onclick = () => { video.muted = !video.muted; };
 video.addEventListener('volumechange', () => { updateVideoMute(); if (!restoring) saveProject(); });
 updateVideoMute();
-for (const id of ['project-menu']) $(id).addEventListener('click', event => { if (event.target.closest('button')) $(id).hidePopover(); });
+$('project-menu').addEventListener('click', event => { if (event.target.closest('button')) $('project-menu').hidePopover(); });
 $('name-cancel').onclick = () => $('name-dialog').close('cancel');
 $('track-visibility').onclick = openVisibility;
 $('visibility-close').onclick = () => $('visibility-dialog').close();
@@ -1984,7 +1976,7 @@ for (const tab of helpTabs) {
 function renderShortcuts() {
   const mouse = { click: tr('click'), drag: tr('drag'), wheel: tr('wheel'), 'double-click': tr('double-click') };
   const groups = [
-    [tr('Playback and recording'), [['Space', tr('Play / pause')], ['*', tr('Start / stop recording')], ['F', tr('Video full screen')], ['V', tr('Show / hide the video and clips panel')], ['H', tr('Open Help on the keyboard shortcuts')], ['+ / -', tr('Move the playhead 1 second')], ['Ctrl++ / Ctrl+-', tr('Move the playhead 10 seconds')], ['Shift++ / Shift+-', tr('Move the playhead 1 frame')], [',', tr('Move the playhead to the export start')], ['.', tr('Move the playhead to the export end')]]],
+    [tr('Playback and recording'), [['Space', tr('Play / pause')], ['*', tr('Start / stop recording')], ['F', tr('Video full screen')], ['V', tr('Show / hide the video and clips panel')], ['H', tr('Open Help on the keyboard shortcuts')], ['+ / -', tr('Move the playhead 1 second')], ['Ctrl++ / Ctrl+-', tr('Move the playhead 10 seconds')], ['Shift++ / Shift+-', tr('Move the playhead 1 frame')], [',', tr('Move the playhead to the export start')], ['.', tr('Move the playhead to the export end')], ['L', tr('Loop playback on / off')]]],
     [tr('Export range'), [['I', tr('Set the export start at the playhead')], ['O', tr('Set the export end at the playhead')], ['double-click', tr('Reset an export marker')]]],
     [tr('Clips'), [['← / →', tr('Move the selected clips 1 second')], ['Ctrl+← / Ctrl+→', tr('Move the selected clips 10 seconds')], ['Shift+← / Shift+→', tr('Move the selected clips 1 frame')], ['C', tr('Cut the selected clips at the playhead')], ['G', tr('Glue the selected overlapping clips')], ['M', tr('Mute / unmute the selected clips')], ['Del / Backspace', tr('Delete the selected clips')], ['Esc', tr('Clear the selection')], ['Shift+click', tr('Add a clip to the selection')], ['Alt+drag', tr('Duplicate the selected clips')], ['double-click', tr('Rename a track; open the settings of a clip')]]],
     [tr('Undo'), [['Ctrl+Z', tr('Undo')], ['Ctrl+Shift+Z / Ctrl+Y', tr('Redo')]]],
@@ -2077,6 +2069,18 @@ function nudgeClips(seconds, repeat) {
   for (const clip of clips) clip.start += shift;
   renderTracks(); syncPlayback(); saveProject();
 }
+async function toggleFullscreen() {
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('.video-frame').requestFullscreen(); }
+  catch (error) { status(tr('Could not toggle full screen: {message}', { message: error.message })); }
+}
+// Single-key shortcuts, by lowercase key (listed for users in renderShortcuts). held: repeats while the key is held down.
+const KEY_ACTIONS = {
+  f: { run: toggleFullscreen }, v: { run: () => $('video-panel-toggle').click() }, h: { run: () => { $('help-dialog').showModal(); showHelpTab($('help-tab-keys'), true); } },
+  l: { run: () => $('loop').click() }, i: { run: () => markAtPlayhead('in') }, o: { run: () => markAtPlayhead('out') },
+  ',': { held: true, run: () => seekTo(exportIn) }, '.': { held: true, run: () => seekTo(exportOutTime()) },
+  c: { run: () => cutClips() }, g: { run: () => glueClips() }, m: { run: () => toggleClipMute() },
+  q: { held: true, run: () => { $('zoom').value = $('zoom').min; rescale(); } }, w: { held: true, run: () => zoomBy(-1) }, e: { held: true, run: () => zoomBy(1) },
+};
 document.addEventListener('keydown', async event => {
   const editing = event.target instanceof Element && event.target.closest('input:not([type="range"]), select, textarea, [contenteditable]');
   const key = event.key.toLowerCase();
@@ -2085,15 +2089,9 @@ document.addEventListener('keydown', async event => {
     event.preventDefault(); if (key === 'y' || event.shiftKey) redo(); else undo(); return;
   }
   if ((event.key === 'Delete' || event.key === 'Backspace') && selectedClips.size && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); deleteSelectedClips(); return; }
-  if (key === 'f' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
-    event.preventDefault();
-    try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('.video-frame').requestFullscreen(); }
-    catch (error) { status(tr('Could not toggle full screen: {message}', { message: error.message })); }
-    return;
-  }
-  if ((key === 'i' || key === 'o') && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
-    event.preventDefault(); markAtPlayhead(key === 'i' ? 'in' : 'out'); return;
-  }
+  // Single keys without Ctrl, Alt or Meta, outside text fields and dialogs (Shift is allowed).
+  const action = !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]') && Object.hasOwn(KEY_ACTIONS, key) ? KEY_ACTIONS[key] : null;
+  if (action && (action.held || !event.repeat)) { event.preventDefault(); action.run(); return; }
   // + and - move the playhead, the arrows move the selected clips: 1 s, Ctrl 10 s, Shift one video frame. Controls that
   // use the arrows themselves (fields, knobs, tabs, the splitter, effect rows) keep them; recording is never interrupted.
   const free = !event.altKey && !event.metaKey && !recording && !editing && !document.querySelector('dialog[open], :popover-open');
@@ -2105,18 +2103,6 @@ document.addEventListener('keydown', async event => {
   if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && free && selectedClips.size && !(event.target instanceof Element && event.target.closest('[role="slider"], [role="tab"], [role="separator"], .fx-item'))) {
     event.preventDefault(); nudgeClips((event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 1 / fps : event.ctrlKey ? 10 : 1), event.repeat); return;
   }
-  // Q fits the whole timeline, W zooms out, E zooms in.
-  if ((key === 'q' || key === 'w' || key === 'e') && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
-    event.preventDefault(); if (key === 'q') { $('zoom').value = $('zoom').min; rescale(); } else zoomBy(key === 'e' ? 1 : -1); return;
-  }
-  if ((event.key === ',' || event.key === '.') && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) {
-    event.preventDefault(); seekTo(event.key === ',' ? exportIn : exportOutTime()); return;
-  }
-  if (key === 'm' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); toggleClipMute(); return; }
-  if (key === 'h' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); $('help-dialog').showModal(); showHelpTab($('help-tab-keys'), true); return; }
-  if (key === 'v' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); $('video-panel-toggle').click(); return; }
-  if (key === 'g' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); glueClips(); return; }
-  if (key === 'c' && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !editing && !document.querySelector('dialog[open]')) { event.preventDefault(); cutClips(); return; }
   if (event.key === 'Escape' && selectedClips.size && !editing && !document.querySelector('dialog[open], :popover-open')) { selectedClips.clear(); updateSelection(); return; }
   const isSpace = event.code === 'Space';
   const isRecord = event.key === '*' || event.code === 'NumpadMultiply';
@@ -2250,7 +2236,9 @@ video.addEventListener('ended', () => {
   if (recording) finishRecording(); stopPlayback(); stopPlayhead();
 });
 navigator.mediaDevices?.addEventListener?.('devicechange', listDevices);
-for (const id of ['video-file', 'add-track', 'import-audio', 'clip-import', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button']) $(id).disabled = true;
+// Buttons that need the project: disabled until restoreProject() has finished.
+const PROJECT_BUTTONS = ['video-file', 'add-track', 'import-audio', 'clip-import', 'track-visibility', 'record', 'export', 'new-project', 'save-project', 'open-project', 'open-project-button'];
+for (const id of PROJECT_BUTTONS) $(id).disabled = true;
 // An AudioContext created before any click starts suspended (e.g. when restoring a boosted video volume).
 for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { if (context?.state === 'suspended') context.resume(); }, true);
 // Custom tooltips: every title attribute (static or set later by code) moves to data-tooltip, so the native tooltip never

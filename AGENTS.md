@@ -6,7 +6,7 @@ Guidance for coding agents working on Audiorec. User-facing docs are in `README.
 
 - Static web app in `app/`: `index.html`, `style.css`, `app.js`, `i18n.js` and `locales/` (served at `/app/`). The root `index.html` is the self-contained landing page. No build, no bundler, no npm dependencies, no framework.
 - Keep it that way: do not add a package manager, transpiler or library unless the user asks.
-- Not a git repository. There is no `git diff` to review changes against.
+- Git repository on GitHub (`parsek-lab/audiorec`). A push to `main` deploys the site to Cloudflare Pages: commit or push only when the user asks.
 - UI text, code and comments are in **English**, even though the user usually writes requests in Italian.
 
 ## Running and verifying
@@ -29,6 +29,10 @@ There is no test suite. Report what was verified and what was not.
 - Buttons with icons use `setIconButton(button, iconName, text, tooltip)`. Icons are `<symbol id="i-NAME">` in `index.html`.
 - Tooltips include the shortcut in parentheses only when there is one, e.g. `Record (*)`; no "(no shortcut)" suffix.
 - Timeline scale: `pxPerSecond`, computed in `renderTimeline()` from the `#zoom` slider (log scale from whole video to 1 s visible). Track headers (`#track-heads`) are a separate fixed column; the timeline scroll area starts at x = 0. Header and lane rows share the `--row` height in CSS.
+- Playback (`syncPlayback`) and export (`renderMix`) schedule clips through the same `scheduleTrack()`: change the clip graph there, once.
+- Waveform canvases are cached per `AudioBuffer` (`waveCache`, keyed by size and color). Never change a buffer's samples in place: make a new buffer (as cut and glue do), or the timeline shows the old waveform.
+- Effects: each kind has one entry in `EFFECT_KINDS` (`eq.js`; the utility effects of `effects.js` share one) with label, dialog, settings, create, copy, valid, connect, update and open. Editors use `wireEffectDialog()` for Enable, Remove and close.
+- Single-key shortcuts live in `KEY_ACTIONS` (`app.js`); list every shortcut in `renderShortcuts()` for the Help tab.
 - Fades: `FADE_SECONDS = .0015`, raised-cosine shape from `fadeGain()`, scheduled by `scheduleFades()` in both `syncPlayback` and the offline `renderMix` used by export, and applied per sample in `clipWav`. `clipFades(track, clip)` turns partial overlaps between clips of a track into equal-power crossfades; pass its result to `scheduleFades()`. Value curves throw if they overlap other automation events: keep using `scheduleFades()`.
 
 ## Persistence — handle with care
@@ -44,7 +48,7 @@ There is no test suite. Report what was verified and what was not.
 - Colors are CSS tokens: `:root` (Dark, the original palette), `:root[data-theme=light]`, `:root[data-theme=accessible]`. Components use `var(--…)` only, never raw colors; a new token must be defined in all three blocks (`check-theme.mjs` enforces it). Canvas waveforms read `--wave`, `--wave-video`, `--wave-rec` via `themeColor()`; a scheme change re-renders tracks.
 - Accessible theme: any new state needs a non-color cue there too (shape, pattern or text), and focus must stay visible. Respect `prefers-reduced-motion`.
 - Explanations live in the Help dialog (`#help-dialog`, opened from the main menu), one tab per topic (`help-files`, `help-recording`, `help-tracks` panels), not inline text. Update the relevant panel when behavior changes; a new topic needs a tab, a panel and its `aria-controls`.
-- Buttons that need the project loaded are disabled until `restoreProject()` finishes; add new ones to both ID lists in `app.js` (end of `restoreProject` and the line before `restoreProject()` is called).
+- Buttons that need the project loaded are disabled until `restoreProject()` finishes; add new ones to `PROJECT_BUTTONS` in `app.js`.
 
 ## Recording pipeline
 

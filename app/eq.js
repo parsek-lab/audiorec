@@ -5,11 +5,33 @@ const copyEQ = eq => eq ? { enabled: eq.enabled, bands: eq.bands.map(b => b.type
 function validEQ(eq) {
   return eq === null || (!!eq && typeof eq.enabled === 'boolean' && Array.isArray(eq.bands) && eq.bands.length === 6 && eq.bands.every((b, i) => b && b.type === (i === 0 ? 'highpass' : i === 1 ? 'lowpass' : 'peaking') && typeof b.enabled === 'boolean' && Number.isFinite(b.freq) && b.freq >= 20 && b.freq <= 20000 && Number.isFinite(b.gain) && Math.abs(b.gain) <= 24 && Number.isFinite(b.q) && b.q >= .1 && b.q <= 20 && (b.slope === undefined || (i < 2 && CUT_SLOPES.includes(b.slope)))));
 }
-const validEffects = effects => Array.isArray(effects) && effects.length <= 32 && effects.every(e => e && (e.type === 'equalizer' ? e.eq && validEQ(e.eq) : e.type === 'compressor' ? validCompressor(e.compressor) : validUtilityEffect(e)));
+// Every kind of effect in one table: the equalizer, the compressor (compressor.js) and the utility effects of effects.js,
+// which share one entry. connect returns { effect, input, output, nodes }; update applies changed settings live.
+// Functions from the later scripts are called through arrows, so this table can be built before they load.
+const EFFECT_KINDS = {
+  equalizer: {
+    label: () => tr('Equalizer'), dialog: 'eq-dialog', settings: e => e.eq, valid: e => !!e.eq && validEQ(e.eq),
+    create: () => ({ type: 'equalizer', eq: defaultEQ() }), copy: e => ({ type: e.type, eq: copyEQ(e.eq) }),
+    connect: (audio, effect) => { const filters = createEQNodes(audio, effect.eq); setEQNodes(filters, effect.eq, audio); filters.reduce((a, b) => { a.connect(b); return b; }); return { effect, input: filters[0], output: filters.at(-1), filters, nodes: filters }; },
+    update: entry => setEQNodes(entry.filters, entry.effect.eq, context), open: (effect, index) => openEqualizer(effect, index),
+  },
+  compressor: {
+    label: () => tr('Compressor'), dialog: 'compressor-dialog', settings: e => e.compressor, valid: e => validCompressor(e.compressor),
+    create: () => ({ type: 'compressor', compressor: defaultCompressor() }), copy: e => ({ type: e.type, compressor: { ...e.compressor } }),
+    connect: (audio, effect, analyse) => connectCompressor(audio, effect, analyse), update: entry => setCompressorNodes(entry), open: (effect, index) => openCompressor(effect, index),
+  },
+  utility: {
+    label: e => UTILITY_EFFECTS[e.type].name, dialog: 'utility-dialog', settings: e => e.settings, valid: e => validUtilityEffect(e),
+    create: type => defaultUtilityEffect(type), copy: e => ({ type: e.type, settings: { ...UTILITY_ADDED[e.type], ...e.settings } }),
+    connect: (audio, effect, analyse) => connectUtilityEffect(audio, effect, analyse), update: entry => setUtilityNodes(entry), open: (effect, index) => openUtilityEffect(effect, index),
+  },
+};
+const effectKind = type => type === 'equalizer' || type === 'compressor' ? EFFECT_KINDS[type] : EFFECT_KINDS.utility;
+const validEffects = effects => Array.isArray(effects) && effects.length <= 32 && effects.every(e => e && effectKind(e.type).valid(e));
 const trackEffects = track => Array.isArray(track.effects) ? track.effects : track.eq ? [{ type: 'equalizer', eq: track.eq }] : [];
-const copyEffects = track => trackEffects(track).map(e => e.type === 'equalizer' ? { type: e.type, eq: copyEQ(e.eq) } : e.type === 'compressor' ? { type: e.type, compressor: { ...e.compressor } } : { type: e.type, settings: { ...UTILITY_ADDED[e.type], ...e.settings } });
-const effectLabel = effect => effect.type === 'compressor' ? tr('Compressor') : effect.type === 'equalizer' ? tr('Equalizer') : UTILITY_EFFECTS[effect.type].name;
-const effectSettings = effect => effect.type === 'equalizer' ? effect.eq : effect.type === 'compressor' ? effect.compressor : effect.settings;
+const copyEffects = track => trackEffects(track).map(e => effectKind(e.type).copy(e));
+const effectLabel = effect => effectKind(effect.type).label(effect);
+const effectSettings = effect => effectKind(effect.type).settings(effect);
 const effectTitle = (effect, index) => `${index + 1}. ${effectLabel(effect)} · ${eqTrack.name}`;
 // Bypassed editors dim their controls; the unchecked Enable box is the non-color cue.
 const markBypass = (dialog, effect) => $(dialog).classList.toggle('bypassed', !effectSettings(effect).enabled);
@@ -37,14 +59,8 @@ function setEQNodes(nodes, eq, audio) {
 function connectTrackEQ(audio, track, input, output, analyse = false) {
   const effects = [], filters = [], nodes = []; let tail = input;
   for (const effect of trackEffects(track)) {
-    if (effect.type !== 'equalizer') {
-      const entry = effect.type === 'compressor' ? connectCompressor(audio, effect, analyse) : connectUtilityEffect(audio, effect, analyse); tail.connect(entry.input); tail = entry.output;
-      effects.push(entry); nodes.push(...entry.nodes);
-    } else {
-      const bandNodes = createEQNodes(audio, effect.eq); setEQNodes(bandNodes, effect.eq, audio);
-      for (const node of bandNodes) { tail.connect(node); tail = node; }
-      effects.push({ effect, filters: bandNodes }); filters.push(...bandNodes); nodes.push(...bandNodes);
-    }
+    const entry = effectKind(effect.type).connect(audio, effect, analyse); tail.connect(entry.input); tail = entry.output;
+    effects.push(entry); nodes.push(...entry.nodes); if (entry.filters) filters.push(...entry.filters);
   }
   const analyser = analyse ? audio.createAnalyser() : null;
   if (analyser) { analyser.fftSize = 16384; analyser.smoothingTimeConstant = .75; tail.connect(analyser); tail = analyser; nodes.push(analyser); }
@@ -61,7 +77,7 @@ function eqGraphPoint(event) { const canvas = $('eq-graph'), r = canvas.getBound
 function eqHandleAt(point) { let best = null, distance = 18; for (const h of eqHandles) { const d = Math.hypot(h.x - point.x, h.y - point.y); if (d <= distance) { best = h; distance = d; } } return best; }
 function updateLiveEQ() {
   const chains = new Set(playingSources.filter(s => s.track === eqTrack).map(s => s.eqChain));
-  for (const chain of chains) for (const entry of chain?.effects || []) { if (entry.effect.type === 'compressor') setCompressorNodes(entry); else if (entry.effect.type === 'equalizer') setEQNodes(entry.filters, entry.effect.eq, context); else setUtilityNodes(entry); }
+  for (const chain of chains) for (const entry of chain?.effects || []) effectKind(entry.effect.type).update(entry);
 }
 function openTrackEQ(track) {
   eqTrack = track;
@@ -70,7 +86,7 @@ function openTrackEQ(track) {
 }
 function changeEQ(action) {
   if (!eqTrack || !tracks.includes(eqTrack)) return;
-  remember('change effects'); action(); updateLiveEQ(); saveProject();
+  remember(tr('change effects')); action(); updateLiveEQ(); saveProject();
 }
 function reorderEffects(from, to) {
   if (!eqTrack || from === to || to < 0 || to >= eqTrack.effects.length) return;
@@ -88,8 +104,8 @@ function renderEffectsList() {
     const order = document.createElement('span'); order.className = 'fx-order'; order.textContent = i + 1; order.setAttribute('aria-hidden', 'true');
     const name = document.createElement('button'); name.type = 'button'; name.className = 'fx-name'; name.textContent = label;
     if (!on) { const off = document.createElement('span'); off.className = 'fx-off'; off.textContent = tr('Off'); name.append(off); }
-    name.setAttribute('aria-haspopup', 'dialog'); name.setAttribute('aria-controls', effect.type === 'compressor' ? 'compressor-dialog' : effect.type === 'equalizer' ? 'eq-dialog' : 'utility-dialog');
-    name.title = tr('Open {effect} · Alt+Arrow Up/Down to reorder', { effect: label }); name.onclick = () => effect.type === 'compressor' ? openCompressor(effect, i) : effect.type === 'equalizer' ? openEqualizer(effect, i) : openUtilityEffect(effect, i);
+    name.setAttribute('aria-haspopup', 'dialog'); name.setAttribute('aria-controls', effectKind(effect.type).dialog);
+    name.title = tr('Open {effect} · Alt+Arrow Up/Down to reorder', { effect: label }); name.onclick = () => effectKind(effect.type).open(effect, i);
     const handle = document.createElement('button'); handle.type = 'button'; handle.className = 'fx-grip ghost'; handle.textContent = '⠿';
     handle.setAttribute('aria-label', tr('Reorder {effect}', { effect: `${i + 1}. ${label}` })); handle.title = tr('Drag to reorder · Alt+Arrow Up/Down');
     const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'fx-toggle ghost'; setIconButton(toggle, 'power', '', tr('Enable {effect}', { effect: label })); toggle.setAttribute('aria-pressed', String(on));
@@ -115,13 +131,23 @@ function renderEffectsList() {
 }
 function addEffect(type) {
   if (!eqTrack || eqTrack.effects.length >= 32) return;
-  changeEQ(() => eqTrack.effects.push(type === 'equalizer' ? { type, eq: defaultEQ() } : type === 'compressor' ? { type, compressor: defaultCompressor() } : defaultUtilityEffect(type)));
+  changeEQ(() => eqTrack.effects.push(effectKind(type).create(type)));
   syncPlayback(); renderEffectsList();
 }
 // Changing a parametric band's gain away from 0 switches the band on, in the same undo step.
 function enableBandOnGain(band) {
   if (band.type !== 'peaking' || band.enabled || !band.gain) return;
   band.enabled = true; const box = document.querySelector(`.eq-band-${eqEffect.eq.bands.indexOf(band)} .eq-band-toggle input`); if (box) box.checked = true;
+}
+// The effect editors share their Enable box, Remove button and close handling; current() is the effect being edited and
+// closed() resets the editor's own state.
+const EFFECT_DIALOGS = ['eq-dialog', 'compressor-dialog', 'utility-dialog'];
+const closeEffectDialogs = () => { for (const id of EFFECT_DIALOGS) if ($(id).open) $(id).close(); };
+function wireEffectDialog(name, current, closed) {
+  const dialog = `${name}-dialog`, enabled = $(`${name}-enabled`);
+  enabled.onchange = () => { changeEQ(() => { effectSettings(current()).enabled = enabled.checked; }); markBypass(dialog, current()); };
+  $(`${name}-remove`).onclick = () => { changeEQ(() => eqTrack.effects.splice(eqTrack.effects.indexOf(current()), 1)); syncPlayback(); $(dialog).close(); renderEffectsList(); };
+  $(dialog).addEventListener('close', () => { finishKnob?.(); closed(); if (eqTrack) renderEffectsList(); });
 }
 function openEqualizer(effect, index) {
   eqEffect = effect; $('eq-title').textContent = effectTitle(effect, index);
@@ -146,7 +172,7 @@ function createEQKnob(band, key, text, min, max, step, bandName, options = {}) {
   knob.onpointerdown = event => {
     if (event.button !== 0 || !eqTrack) return; event.preventDefault(); knob.focus(); knob.setPointerCapture(event.pointerId);
     const startY = event.clientY, initial = normalize(band[key]); let remembered = false;
-    const move = e => { const t = Math.max(0, Math.min(1, initial + (startY - e.clientY) / (e.shiftKey ? 1600 : 220))); if (!remembered && t !== initial) { remember('change effect'); remembered = true; } set(denormalize(t)); };
+    const move = e => { const t = Math.max(0, Math.min(1, initial + (startY - e.clientY) / (e.shiftKey ? 1600 : 220))); if (!remembered && t !== initial) { remember(tr('change effect')); remembered = true; } set(denormalize(t)); };
     const end = () => { knob.removeEventListener('pointermove', move); knob.removeEventListener('pointerup', end); knob.removeEventListener('pointercancel', end); knob.removeEventListener('lostpointercapture', end); finishKnob = null; if (remembered) { saveProject(); commit(); } };
     finishKnob?.(); finishKnob = end;
     knob.addEventListener('pointermove', move); knob.addEventListener('pointerup', end); knob.addEventListener('pointercancel', end); knob.addEventListener('lostpointercapture', end);
@@ -241,17 +267,15 @@ window.addEventListener('DOMContentLoaded', () => {
     const move = e => {
       const p = eqGraphPoint(e), freq = Math.round(Math.max(20, Math.min(20000, 20 * 1000 ** ((p.x - left) / (right - left))))), gain = Math.round(Math.max(-24, Math.min(24, 24 - (p.y - top) / (bottom - top) * 48)) * 10) / 10;
       if (freq === band.freq && (band.type !== 'peaking' || gain === band.gain)) return;
-      if (!eqDrag.remembered) { remember('change effect'); eqDrag.remembered = true; }
+      if (!eqDrag.remembered) { remember(tr('change effect')); eqDrag.remembered = true; }
       band.freq = freq; if (band.type === 'peaking') { band.gain = gain; enableBandOnGain(band); } updateLiveEQ();
       for (const group of $('eq-controls').querySelectorAll('.eq-knob-control')) group.refresh?.();
     };
     const end = () => { canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', end); canvas.removeEventListener('pointercancel', end); canvas.style.cursor = ''; if (eqDrag?.remembered) saveProject(); eqDrag = null; };
     canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
   };
-  $('eq-remove').onclick = () => { changeEQ(() => eqTrack.effects.splice(eqTrack.effects.indexOf(eqEffect), 1)); syncPlayback(); $('eq-dialog').close(); renderEffectsList(); };
-  $('eq-enabled').onchange = () => { changeEQ(() => { eqEffect.eq.enabled = $('eq-enabled').checked; }); markBypass('eq-dialog', eqEffect); };
-  $('eq-dialog').addEventListener('close', () => { finishKnob?.(); cancelAnimationFrame(eqFrame); eqPreview?.forEach(n => n.disconnect()); eqPreview = null; eqEffect = null; if (eqTrack) renderEffectsList(); });
-  $('fx-dialog').addEventListener('close', () => { if ($('eq-dialog').open) $('eq-dialog').close(); if ($('compressor-dialog').open) $('compressor-dialog').close(); if ($('utility-dialog').open) $('utility-dialog').close(); eqTrack = null; });
+  wireEffectDialog('eq', () => eqEffect, () => { cancelAnimationFrame(eqFrame); eqPreview?.forEach(n => n.disconnect()); eqPreview = null; eqEffect = null; });
+  $('fx-dialog').addEventListener('close', () => { closeEffectDialogs(); eqTrack = null; });
   for (const dialog of document.querySelectorAll('dialog')) {
     const outside = e => { const r = dialog.getBoundingClientRect(); return e.target === dialog && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom); };
     let beganOutside = false;

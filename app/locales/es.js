@@ -1,7 +1,12 @@
 // Español interface translation: contextual Google Translate batches with editorial review.
 I18N.register("es", "Español", {
-  "Loop playback between the export markers": "Repetir la reproducción entre los marcadores de exportación",
-  "Loop on: playback repeats between the export markers": "Bucle activo: la reproducción se repite entre los marcadores de exportación",
+  "change effects": "cambiar efectos",
+  "change effect": "cambiar efecto",
+  "Effects unavailable: {message}": "Efectos no disponibles: {message}",
+  "Effect processing failed ({effect}). Stop playback and reload the project.": "Falló el procesamiento del efecto ({effect}). Detén la reproducción y vuelve a cargar el proyecto.",
+  "Expander and pitch shifter require AudioWorklet on localhost or HTTPS.": "El expansor y el cambiador de tono requieren AudioWorklet en localhost o HTTPS.",
+  "Loop playback between the export markers (L)": "Repetir la reproducción entre los marcadores de exportación (L)",
+  "Loop on: playback repeats between the export markers (L)": "Bucle activo: la reproducción se repite entre los marcadores de exportación (L)",
   "Loop on.": "Bucle activado.",
   "Loop off.": "Bucle desactivado.",
   "Open Help on the keyboard shortcuts": "Abrir la Ayuda en los atajos de teclado",
@@ -49,6 +54,7 @@ I18N.register("es", "Español", {
   "double-click": "doble clic",
   "Playback and recording": "Reproducción y grabación",
   "Play / pause": "Reproducir / pausa",
+  "Loop playback on / off": "Activar / desactivar el bucle",
   "Start / stop recording": "Iniciar / detener la grabación",
   "Video full screen": "Vídeo a pantalla completa",
   "Move the playhead to the export start": "Mover el cabezal al inicio de la exportación",

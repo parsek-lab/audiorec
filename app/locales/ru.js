@@ -1,7 +1,12 @@
 // Русский interface translation: contextual Google Translate batches with editorial review.
 I18N.register("ru", "Русский", {
-  "Loop playback between the export markers": "Повторять воспроизведение между маркерами экспорта",
-  "Loop on: playback repeats between the export markers": "Повтор включён: воспроизведение повторяется между маркерами экспорта",
+  "change effects": "изменить эффекты",
+  "change effect": "изменить эффект",
+  "Effects unavailable: {message}": "Эффекты недоступны: {message}",
+  "Effect processing failed ({effect}). Stop playback and reload the project.": "Ошибка обработки эффекта ({effect}). Остановите воспроизведение и перезагрузите проект.",
+  "Expander and pitch shifter require AudioWorklet on localhost or HTTPS.": "Экспандеру и питч-шифтеру нужен AudioWorklet на localhost или HTTPS.",
+  "Loop playback between the export markers (L)": "Повторять воспроизведение между маркерами экспорта (L)",
+  "Loop on: playback repeats between the export markers (L)": "Повтор включён: воспроизведение повторяется между маркерами экспорта (L)",
   "Loop on.": "Повтор включён.",
   "Loop off.": "Повтор выключен.",
   "Open Help on the keyboard shortcuts": "Открыть справку на сочетаниях клавиш",
@@ -49,6 +54,7 @@ I18N.register("ru", "Русский", {
   "double-click": "двойной щелчок",
   "Playback and recording": "Воспроизведение и запись",
   "Play / pause": "Воспроизвести / пауза",
+  "Loop playback on / off": "Включить / выключить повтор",
   "Start / stop recording": "Начать / остановить запись",
   "Video full screen": "Видео на весь экран",
   "Move the playhead to the export start": "Переместить указатель к началу экспорта",

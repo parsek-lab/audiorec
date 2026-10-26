@@ -1,8 +1,13 @@
 // Italian interface translation, drafted in 20 contextual Google Translate batches and edited in context.
 // Regenerate new keys with node tools/i18n.mjs update it; preserve placeholders and shortcuts.
 I18N.register("it", "Italiano", {
-  "Loop playback between the export markers": "Ripeti la riproduzione tra i marcatori di export",
-  "Loop on: playback repeats between the export markers": "Loop attivo: la riproduzione si ripete tra i marcatori di export",
+  "change effects": "modifica effetti",
+  "change effect": "modifica effetto",
+  "Effects unavailable: {message}": "Effetti non disponibili: {message}",
+  "Effect processing failed ({effect}). Stop playback and reload the project.": "Elaborazione dell'effetto non riuscita ({effect}). Ferma la riproduzione e ricarica il progetto.",
+  "Expander and pitch shifter require AudioWorklet on localhost or HTTPS.": "Expander e pitch shifter richiedono AudioWorklet su localhost o HTTPS.",
+  "Loop playback between the export markers (L)": "Ripeti la riproduzione tra i marcatori di export (L)",
+  "Loop on: playback repeats between the export markers (L)": "Loop attivo: la riproduzione si ripete tra i marcatori di export (L)",
   "Loop on.": "Loop attivo.",
   "Loop off.": "Loop disattivato.",
   "Open Help on the keyboard shortcuts": "Apri l’Aiuto sulle scorciatoie da tastiera",
@@ -50,6 +55,7 @@ I18N.register("it", "Italiano", {
   "double-click": "doppio clic",
   "Playback and recording": "Riproduzione e registrazione",
   "Play / pause": "Riproduci / pausa",
+  "Loop playback on / off": "Attiva / disattiva il loop",
   "Start / stop recording": "Avvia / ferma la registrazione",
   "Video full screen": "Video a schermo intero",
   "Move the playhead to the export start": "Sposta la testina all’inizio dell’export",

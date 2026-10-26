@@ -373,6 +373,34 @@ try {
     press();const toggled=panel.hidden!==start;const field=document.getElementById('timeline-length');field.focus();press(field);const typing=panel.hidden!==start;field.blur();press();
     return toggled&&typing&&panel.hidden===start&&document.getElementById('video-panel-toggle').title.endsWith('(V)');
   })()`), 'V toggles the video panel');
+  // Single-key table: I / O set the markers, M mutes once per press (not on key repeat, not with Ctrl), C cuts, an open
+  // dialog blocks them.
+  const single = await evaluate(`(()=>{
+    const t=tracks[0],clips=t.clips,press=(key,options={})=>document.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
+    try{
+      timelineLength=10;t.clips=[{name:'k',start:0,trimStart:0,trimEnd:0,muted:false,gain:1,fadeIn:0,fadeOut:0,buffer:getContext().createBuffer(1,48000*4,48000)}];renderTracks();
+      seekTo(1);press('i');seekTo(3);press('o');const marks=[exportIn,exportOut];
+      selectedClips.clear();selectedClips.add(t.clips[0]);press('m');const muted=t.clips[0].muted;press('m',{repeat:true});const repeatIgnored=t.clips[0].muted;press('m',{ctrlKey:true});const ctrlIgnored=t.clips[0].muted;press('M',{shiftKey:true});const shiftWorks=!t.clips[0].muted;
+      document.getElementById('device-dialog').showModal();press('c');const blocked=t.clips.length===1;document.getElementById('device-dialog').close();
+      seekTo(2);press('c');const cut=t.clips.length===2;
+      const wasLooping=looping;press('l');const loop=looping!==wasLooping&&document.getElementById('loop').getAttribute('aria-pressed')===String(looping);press('l');
+      return {marks,muted,repeatIgnored,ctrlIgnored,shiftWorks,blocked,cut,loop:loop&&looping===wasLooping};
+    }finally{t.clips=clips;timelineLength=null;exportIn=0;exportOut=null;selectedClips.clear();seekTo(0);renderTracks();}
+  })()`);
+  // Waveform cache: a re-render reuses the clip's canvas, a duplicated clip gets its own copy, a zoom change redraws.
+  const wave = await evaluate(`(()=>{
+    const t=tracks.find(track=>!isHidden(track)),clips=t.clips,buffer=getContext().createBuffer(1,48000*60,48000);channelData(buffer).fill(.5);
+    try{
+      t.clips=[{name:'w',start:0,trimStart:0,trimEnd:0,muted:false,gain:1,fadeIn:0,fadeOut:0,buffer}];renderTracks();
+      const canvas=()=>[...document.querySelectorAll('#tracks .clip .clip-wave')];const first=canvas()[0];
+      let t0=performance.now();renderTracks();const cachedMs=performance.now()-t0,reused=canvas()[0]===first;
+      t.clips.push({...t.clips[0],start:70});renderTracks();const [a,b]=canvas(),copied=a!==b&&a.width===b.width&&b.getContext('2d').getImageData(Math.floor(b.width/2),Math.floor(b.height/2),1,1).data[3]>0;
+      t.clips.pop();const zoom=document.getElementById('zoom'),before=zoom.value;zoom.value=zoom.value===zoom.min?zoom.max:zoom.min;renderTracks();const redrawn=canvas()[0]!==first;zoom.value=before;
+      return {reused,copied,redrawn,cachedMs:+cachedMs.toFixed(1)};
+    }finally{t.clips=clips;renderTracks();}
+  })()`);
+  assert(wave.reused && wave.copied && wave.redrawn, `Waveform cache: ${JSON.stringify(wave)}`);
+  assert(JSON.stringify(single.marks) === '[1,3]' && single.muted && single.repeatIgnored && single.ctrlIgnored && single.shiftWorks && single.blocked && single.cut && single.loop, `Single-key shortcuts: ${JSON.stringify(single)}`);
   // Recording: direct track capture where available, AudioWorklet otherwise; the take must match the elapsed time.
   for (const direct of [true, false]) {
     const take = await evaluate(`(async()=>{
