@@ -128,7 +128,7 @@ try {
     const before = JSON.stringify(tracks[0].effects), file = new File([projectBlob()], 'round-trip.audiorec');
     const bytes = new Uint8Array(await file.arrayBuffer()), view = new DataView(bytes.buffer), size = view.getUint32(8, true);
     const manifest = JSON.parse(new TextDecoder().decode(bytes.slice(12, 12 + size)));
-    if (manifest.version !== 12 || manifest.tracks[0].effects.length !== 2) return false;
+    if (manifest.version !== 13 || manifest.tracks[0].effects.length !== 2) return false;
     const oldAsk = ask; ask = async () => true;
     try {
       await openProject(file); if (JSON.stringify(tracks[0].effects) !== before) return false;
@@ -138,7 +138,7 @@ try {
       await openProject(new File([header, json, bytes.slice(12 + size)], 'legacy-v6.audiorec'));
       return tracks[0].effects.length === 1 && JSON.stringify(tracks[0].effects[0].eq) === JSON.stringify(copyEQ(manifest.tracks[0].eq)) && tracks[0].effects[0].eq.bands[0].slope === 12;
     } finally { ask = oldAsk; }
-  })()`), 'Version 12 file round-trip and version 6 EQ migration (cuts default to 12 dB/oct)');
+  })()`), 'Version 13 file round-trip and version 6 EQ migration (cuts default to 12 dB/oct)');
   assert(await evaluate(`(() => {
     document.querySelector('.track-fx').click(); ${addFx('compressor')};
     const row=document.querySelectorAll('.fx-name')[1]; if(!row.textContent.includes('Compressor'))return false; row.click();
@@ -279,6 +279,34 @@ try {
     }finally{tracks[0].clips=clips;tracks[0].effects=effects;selectedClips.clear();renderTracks();}
   })()`);
   assert(glue.gapDisabled && glue.enabled && glue.count === 2 && glue.steps === 1 && glue.diff < .002 && glue.duration === .15 && JSON.stringify(glue.fades) === JSON.stringify([.02, .03, 1]) && glue.selected && glue.farKept && glue.undone, `Glue overlapping clips: ${JSON.stringify(glue)}`);
+  // 48 kHz project, stereo clips: imports at other rates are resampled and keep their channels; cut, glue, clip WAV,
+  // export and both kinds of saved project keep stereo; a 44.1 kHz clip in a project file is converted on open.
+  const stereo = await evaluate(`(async()=>{
+    const wav=(rate,channels,seconds,sample)=>{const n=Math.round(rate*seconds),data=new DataView(new ArrayBuffer(44+n*channels*2)),text=(o,t)=>[...t].forEach((c,i)=>data.setUint8(o+i,c.charCodeAt(0)));
+      text(0,'RIFF');data.setUint32(4,36+n*channels*2,true);text(8,'WAVEfmt ');data.setUint32(16,16,true);data.setUint16(20,1,true);data.setUint16(22,channels,true);data.setUint32(24,rate,true);data.setUint32(28,rate*channels*2,true);data.setUint16(32,channels*2,true);data.setUint16(34,16,true);text(36,'data');data.setUint32(40,n*channels*2,true);
+      for(let i=0;i<n;i++)for(let c=0;c<channels;c++)data.setInt16(44+(i*channels+c)*2,Math.round(sample(i/rate,c)*32767),true);return new File([data.buffer],'test.wav',{type:'audio/wav'});};
+    const t=tracks[0],clips=t.clips,effects=t.effects,rms=(a,from=0,to=a.length)=>{let s=0;for(let i=from;i<to;i++)s+=a[i]*a[i];return Math.sqrt(s/(to-from));};
+    try{
+      t.effects=[];t.pan=0;t.clips=[];
+      await importAudio([wav(44100,2,1,(time,c)=>c?0:.5*Math.sin(2*Math.PI*440*time))],t,1);const st=t.clips[0];
+      await importAudio([wav(22050,1,.5,time=>.3*Math.sin(2*Math.PI*300*time))],t,3);const mono=t.clips[1];
+      const imported=[st.buffer.sampleRate,st.buffer.numberOfChannels,+st.buffer.duration.toFixed(3),+rms(channelData(st.buffer,0)).toFixed(2),+rms(channelData(st.buffer,1)).toFixed(3),mono.buffer.sampleRate,mono.buffer.numberOfChannels,+mono.buffer.duration.toFixed(3)];
+      const mix=await renderMix(1,2,48000,2,null),separated=rms(mix.getChannelData(0),4800,43200)>.3&&rms(mix.getChannelData(1),4800,43200)<.001;
+      const wavOut=new DataView(clipWav(st).buffer),wavChannels=wavOut.getUint16(22,true),wavRate=wavOut.getUint32(24,true);
+      selectedClips.clear();selectedClips.add(st);seekTo(1.5);cutClips();const pieces=t.clips.filter(c=>c.name.startsWith('test')&&c!==mono),cutStereo=pieces.length===2&&pieces.every(c=>c.buffer.numberOfChannels===2);
+      selectedClips.clear();pieces.forEach(c=>selectedClips.add(c));await glueClips();const glued=t.clips.find(c=>c.buffer.numberOfChannels===2&&c.start===1),glueStereo=!!glued&&Math.abs(glued.buffer.duration-1)<.01;
+      const saved=projectData().tracks[0].clips.find(c=>c.start===1),dbStereo=!!saved?.samplesRight&&saved.samplesRight.length===saved.samples.length;
+      t.clips.push({name:'old',start:5,trimStart:0,trimEnd:0,buffer:getContext().createBuffer(1,44100,44100)});
+      const file=new File([projectBlob()],'stereo.audiorec'),oldAsk=ask;ask=async()=>true;try{await openProject(file);}finally{ask=oldAsk;}
+      const reopened=tracks[0].clips,back=reopened.find(c=>c.start===1),old=reopened.find(c=>c.name==='old');
+      return {rate:getContext().sampleRate,imported,separated,wav:[wavChannels,wavRate],cutStereo,glueStereo,dbStereo,fileStereo:back?.buffer.numberOfChannels===2&&Math.abs(rms(channelData(back.buffer,0))-rms(channelData(glued.buffer,0)))<.001,oldConverted:[old?.buffer.sampleRate,+old?.buffer.duration.toFixed(3)]};
+    }finally{if(tracks[0]===t){t.clips=clips;t.effects=effects;}selectedClips.clear();seekTo(0);renderTracks();}
+  })()`);
+  assert(stereo.rate === 48000 && JSON.stringify(stereo.imported) === JSON.stringify([48000, 2, 1, .35, 0, 48000, 1, .5]) && stereo.separated && JSON.stringify(stereo.wav) === JSON.stringify([2, 48000]) && stereo.cutStereo && stereo.glueStereo && stereo.dbStereo && stereo.fileStereo && JSON.stringify(stereo.oldConverted) === JSON.stringify([48000, 1]), `48 kHz project and stereo clips: ${JSON.stringify(stereo)}`);
+  // A stereo clip survives the browser autosave and a reload.
+  await evaluate(`(async()=>{const b=getContext().createBuffer(2,4800,48000);b.getChannelData(1).fill(.25);tracks[0].clips.push({name:'stereo-db',start:7,trimStart:0,trimEnd:0,buffer:b});await saveProject();return true})()`);
+  await call('Page.reload'); await wait("!!document.querySelector('.track-fx') && !document.getElementById('add-track').disabled");
+  assert(await evaluate(`(async()=>{const c=tracks[0].clips.find(c=>c.name==='stereo-db'),ok=!!c&&c.buffer.numberOfChannels===2&&Math.abs(channelData(c.buffer,1)[10]-.25)<1e-6&&channelData(c.buffer,0)[10]===0;tracks[0].clips=tracks[0].clips.filter(x=>x!==c);await saveProject();return ok})()`), 'Stereo clip survives the browser autosave');
   // Export with a pitch shifter: the dry part must land on the exact timeline sample, the wet part within its swing.
   const latency = await evaluate(`(async()=>{
     const t=tracks[0],clips=t.clips,effects=t.effects,buffer=getContext().createBuffer(1,48000,48000),data=buffer.getChannelData(0);

@@ -41,7 +41,7 @@ const dry = node(); assert.equal(connectTrackEQ(audio, {}, dry, output).nodes.le
 const app = readFileSync(new URL('app/app.js', root), 'utf8');
 assert(app.includes('connectTrackEQ(context, track, input, pan.input, true)'));
 assert(app.includes('connectTrackEQ(offline, track, eqInput, connectPan(offline, track, offline.destination).input)'));
-assert(app.includes('version: 12')); assert(app.includes('const at = now + trackLatency(track, context.sampleRate)')); assert(app.includes('const from = start - lead + trackLatency(track, rate)')); assert(app.includes('effects: track.effects'));
+assert(app.includes('version: 13')); assert(app.includes('const at = now + trackLatency(track, context.sampleRate)')); assert(app.includes('const from = start - lead + trackLatency(track, rate)')); assert(app.includes('effects: track.effects'));
 assert(app.includes('effects: copyEffects(t)')); assert(app.includes('validEQ(track.eq)')); assert(app.includes('validEffects(track.effects)'));
 const effects = [{ type: 'equalizer', eq: defaultEQ() }, { type: 'equalizer', eq: defaultEQ() }];
 assert(validEffects(effects)); assert(!validEffects([{ type: 'unknown', eq: defaultEQ() }])); assert(!validEffects([{ type: 'equalizer', eq: null }]));

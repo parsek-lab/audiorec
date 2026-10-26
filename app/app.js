@@ -230,7 +230,21 @@ function stopPlayhead() {
 // Read each clip's samples through one cached array: browsers with fingerprinting protection (Brave Shields) alter the
 // buffer on every getChannelData call, so repeated calls from the meters made playback fade within seconds.
 const channels = new WeakMap();
-const channel = buffer => { let data = channels.get(buffer); if (!data) channels.set(buffer, data = buffer.getChannelData(0)); return data; };
+const channelData = (buffer, c = 0) => { let list = channels.get(buffer); if (!list) channels.set(buffer, list = []); return list[c] ??= buffer.getChannelData(c); };
+const channel = buffer => channelData(buffer);
+const clipChannels = buffer => Array.from({ length: buffer.numberOfChannels }, (_, c) => channelData(buffer, c));
+// The project runs at 48 kHz and clips are mono or stereo: other rates are resampled and more channels are folded to
+// stereo with Web Audio's speaker down-mix (5.1 keeps its centre and surrounds in the mix).
+const PROJECT_RATE = 48000;
+async function adaptAudio(buffer) {
+  const count = Math.min(2, buffer.numberOfChannels);
+  if (buffer.sampleRate === PROJECT_RATE && buffer.numberOfChannels === count) return buffer;
+  const offline = new OfflineAudioContext(count, Math.max(1, Math.round(buffer.duration * PROJECT_RATE)), PROJECT_RATE), source = offline.createBufferSource();
+  source.buffer = buffer; source.connect(offline.destination); source.start(); return offline.startRendering();
+}
+async function adaptClips(list) { for (const track of list) for (const clip of track.clips) clip.buffer = await adaptAudio(clip.buffer); }
+// A clip's samples as stored in IndexedDB and in .audiorec files: one Float32Array per channel.
+const bufferFrom = (audio, planes, rate) => { const buffer = audio.createBuffer(planes.length, planes[0].length, rate); planes.forEach((data, c) => buffer.copyToChannel(data, c)); return buffer; };
 const clipDuration = clip => Math.max(0, clip.buffer.duration - (clip.trimStart || 0) - (clip.trimEnd || 0));
 // Clip edges fade in and out over 1.5 ms with a raised cosine (sin²): no slope jump at either end, so it splatters less
 // than the former 5 ms linear ramp (about -77 dB against -73 dB above 2 kHz for a cut at a peak) at under a third of the
@@ -281,7 +295,7 @@ function projectData() {
   return { nextId, projectName, timelineLength, exportIn, exportOut, videoFile: selectedVideo, videoMuted: video.muted, videoVolume: videoGain,
     tracks: tracks.map(t => ({ id: t.id, name: t.name || tr('Track {n}', { n: t.id }), armed: t.armed, muted: t.muted, visible: t.visible !== false, volume: t.volume ?? 1, color: trackColor(t), effects: copyEffects(t),
       pan: t.pan ?? 0, clips: t.clips.map(c => ({ name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart || 0, trimEnd: c.trimEnd || 0, muted: !!c.muted, gain: c.gain ?? 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0,
-        sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)) })) })) };
+        sampleRate: c.buffer.sampleRate, samples: new Float32Array(channel(c.buffer)), ...(c.buffer.numberOfChannels > 1 && { samplesRight: new Float32Array(channelData(c.buffer, 1)) }) })) })) };
 }
 function saveProject() {
   if (restoring) return saveQueue;
@@ -312,12 +326,12 @@ async function restoreProject() {
       const audio = getContext();
       for (const saved of data.tracks) {
         const clips = saved.clips.map(c => {
-          const buffer = audio.createBuffer(1, c.samples.length, c.sampleRate);
-          buffer.copyToChannel(c.samples, 0);
+          const buffer = bufferFrom(audio, c.samplesRight?.length === c.samples.length ? [c.samples, c.samplesRight] : [c.samples], c.sampleRate);
           return { name: c.name || tr('Clip'), start: c.start, trimStart: c.trimStart, trimEnd: c.trimEnd, muted: !!c.muted, gain: validVolume(c.gain) ? c.gain : 1, fadeIn: validFade(c.fadeIn) ? c.fadeIn : 0, fadeOut: validFade(c.fadeOut) ? c.fadeOut : 0, buffer };
         });
         tracks.push({ id: saved.id, name: saved.name || tr('Track {n}', { n: saved.id }), armed: saved.armed, muted: saved.muted, visible: saved.visible !== false, volume: validVolume(saved.volume) ? saved.volume : 1, pan: validPan(saved.pan) ? saved.pan : 0, color: validColor(saved.color) ? saved.color : undefined, effects: validEffects(saved.effects) ? copyEffects(saved) : validEQ(saved.eq) ? copyEffects({ eq: saved.eq }) : [], clips });
       }
+      await adaptClips(tracks);
       nextId = data.nextId; timelineLength = validLength(data.timelineLength ?? null) ? data.timelineLength ?? null : null;
       restoreMarkers(data);
       showProjectName(typeof data.projectName === 'string' ? data.projectName : projectHandle?.name);
@@ -712,9 +726,7 @@ async function importAudio(files, track = tracks.find(t => t.armed) ?? tracks[0]
   status(tr('Importing {files}…', { files: files.length === 1 ? files[0].name : trn('{count} file', '{count} files', files.length) }));
   for (const file of files) {
     try {
-      const decoded = await audio.decodeAudioData(await file.arrayBuffer());
-      const buffer = audio.createBuffer(1, decoded.length, decoded.sampleRate), mono = channel(buffer);
-      for (let c = 0; c < decoded.numberOfChannels; c++) { const data = decoded.getChannelData(c); for (let i = 0; i < data.length; i++) mono[i] += data[i] / decoded.numberOfChannels; }
+      const decoded = await audio.decodeAudioData(await file.arrayBuffer()), buffer = await adaptAudio(decoded);
       clips.push({ name: file.name.replace(/\.[^.]+$/, '') || tr('Clip'), start: Math.max(0, start), trimStart: 0, trimEnd: 0, buffer }); start += decoded.duration;
     } catch { failed.push(file.name); }
   }
@@ -756,11 +768,11 @@ function cutClips() {
   if (recording || !cuts.length) return;
   remember(trn('cut clip', 'cut {count} clips', cuts.length));
   const time = playPosition(), audio = getContext(), pieces = [];
-  const slice = (data, rate, from, to) => { const buffer = audio.createBuffer(1, to - from, rate); buffer.copyToChannel(data.subarray(from, to), 0); return buffer; };
+  const slice = (planes, rate, from, to) => bufferFrom(audio, planes.map(data => data.subarray(from, to)), rate);
   for (const { clip, track } of cuts) {
-    const data = channel(clip.buffer), rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
-    const left = { ...clip, buffer: slice(data, rate, 0, at), trimEnd: 0, fadeOut: 0 };
-    const right = { ...clip, name: nextNameLike(clip.name || tr('Clip')), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(data, rate, at, data.length), trimStart: 0, fadeIn: 0 };
+    const planes = clipChannels(clip.buffer), data = planes[0], rate = clip.buffer.sampleRate, at = Math.round(((clip.trimStart || 0) + time - clip.start) * rate);
+    const left = { ...clip, buffer: slice(planes, rate, 0, at), trimEnd: 0, fadeOut: 0 };
+    const right = { ...clip, name: nextNameLike(clip.name || tr('Clip')), start: clip.start + at / rate - (clip.trimStart || 0), buffer: slice(planes, rate, at, data.length), trimStart: 0, fadeIn: 0 };
     track.clips.splice(track.clips.indexOf(clip), 1, left, right);
     selectedClips.delete(clip); pieces.push(left, right);
   }
@@ -797,7 +809,7 @@ async function glueClips() {
     for (const { track, clips } of chains) {
       const start = Math.min(...clips.map(c => c.start)), end = Math.max(...clips.map(c => c.start + clipDuration(c))), rate = Math.max(...clips.map(c => c.buffer.sampleRate));
       const first = clips.find(c => c.start === start), last = clips.findLast(c => c.start + clipDuration(c) === end);
-      const offline = new OfflineAudioContext(1, Math.max(1, Math.round((end - start) * rate)), rate);
+      const offline = new OfflineAudioContext(Math.max(...clips.map(c => c.buffer.numberOfChannels)), Math.max(1, Math.round((end - start) * rate)), rate);
       for (const clip of clips) {
         const fades = clipFades({ clips }, clip), node = offline.createBufferSource(), gain = offline.createGain();
         if (clip === first) fades.in = 0; if (clip === last) fades.out = 0;
@@ -854,11 +866,11 @@ function drawWaveform(clip) {
   const canvas = document.createElement('canvas'), ratio = window.devicePixelRatio || 1;
   canvas.className = 'clip-wave'; canvas.width = Math.min(16000, Math.ceil(width * ratio)); canvas.height = Math.ceil(height * ratio);
   canvas.style.width = `${width}px`; canvas.style.left = `${-(clip.trimStart || 0) * pxPerSecond}px`;
-  const g = canvas.getContext('2d'), data = channel(clip.buffer), step = data.length / canvas.width, middle = canvas.height / 2;
+  const g = canvas.getContext('2d'), planes = clipChannels(clip.buffer), step = planes[0].length / canvas.width, middle = canvas.height / 2;
   g.fillStyle = themeColor('--wave');
   for (let x = 0; x < canvas.width; x++) {
     let peak = 0;
-    for (let i = Math.floor(x * step), end = Math.min(data.length, Math.floor((x + 1) * step)); i < end; i++) peak = Math.max(peak, Math.abs(data[i]));
+    for (const data of planes) for (let i = Math.floor(x * step), end = Math.min(data.length, Math.floor((x + 1) * step)); i < end; i++) peak = Math.max(peak, Math.abs(data[i]));
     const bar = Math.max(ratio / 2, Math.min(1, peak * 1.6) * middle * .85);
     g.fillRect(x, middle - bar, 1, bar * 2);
   }
@@ -943,8 +955,8 @@ const trackPeak = (track, time) => {
   for (const clip of track.clips) {
     const offset = time - clip.start;
     if (clip.muted || offset < 0 || offset >= clipDuration(clip)) continue;
-    const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.floor((offset + (clip.trimStart || 0)) * rate);
-    for (let i = from, end = Math.min(data.length, from + Math.round(rate * .05)); i < end; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
+    const rate = clip.buffer.sampleRate, from = Math.floor((offset + (clip.trimStart || 0)) * rate);
+    for (const data of clipChannels(clip.buffer)) for (let i = from, end = Math.min(data.length, from + Math.round(rate * .05)); i < end; i++) { const v = Math.abs(data[i]); if (v > peak) peak = v; }
   }
   return peak * (track.volume ?? 1);
 }
@@ -960,12 +972,12 @@ function masterPeak(time) {
   const clips = tracks.filter(t => !t.muted && !isHidden(t)).flatMap(t => t.clips.map(clip => ({ clip, gain: t.volume ?? 1 }))).filter(({ clip }) => !clip.muted && time >= clip.start && time < clip.start + clipDuration(clip));
   for (let k = 0; k < 400; k++) {
     const at = time + k * .05 / 400;
-    let sum = 0;
+    let left = 0, right = 0;
     for (const { clip, gain } of clips) {
-      const data = channel(clip.buffer), i = Math.floor((at - clip.start + (clip.trimStart || 0)) * clip.buffer.sampleRate);
-      if (i < data.length) sum += data[i] * gain;
+      const planes = clipChannels(clip.buffer), i = Math.floor((at - clip.start + (clip.trimStart || 0)) * clip.buffer.sampleRate);
+      if (i < planes[0].length) { left += planes[0][i] * gain; right += planes.at(-1)[i] * gain; }
     }
-    if (Math.abs(sum) > peak) peak = Math.abs(sum);
+    peak = Math.max(peak, Math.abs(left), Math.abs(right));
   }
   return peak + videoPeak(time);
 }
@@ -1116,7 +1128,7 @@ function updateRecordingPreview() {
   }
   preview.drawn = peaks.length;
 }
-function getContext() { return context ??= new AudioContext(); }
+function getContext() { return context ??= new AudioContext({ sampleRate: PROJECT_RATE }); }
 function stopPlayback() { playbackRevision++; for (const { node, gain, level, eqChain } of playingSources) { try { node.stop(); } catch {} node.disconnect(); gain.disconnect(); level.disconnect(); disposeEffectChain(eqChain); } playingSources = []; }
 // Volume faders run from -inf to +10 dB on a quadratic curve (0 dB sits at about 62% of the travel); gains are stored linear.
 const MAX_DB = 10, MIN_DB = -60, MAX_GAIN = 10 ** (MAX_DB / 20);
@@ -1470,7 +1482,8 @@ function finishRecording() {
       const buffer = context.createBuffer(1, length, sampleRate);
       const data = channel(buffer); let position = 0;
       for (const chunk of chunks) { data.set(chunk, position); position += chunk.length; }
-      track.clips.push({ name: nextClipName(track), start, buffer });
+      const clip = { name: nextClipName(track), start, buffer }; track.clips.push(clip);
+      if (buffer.sampleRate !== PROJECT_RATE) adaptAudio(buffer).then(adapted => { clip.buffer = adapted; renderTracks(); saveProject(); });
     }
     delete track.pending;
   }
@@ -1518,11 +1531,11 @@ function rememberProjectFile(handle) {
 function projectBlob() {
     const data = projectData();
     const manifest = {
-      version: 12, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
+      version: 13, nextId: data.nextId, length: data.timelineLength, exportIn: data.exportIn, exportOut: data.exportOut, videoMuted: data.videoMuted, videoVolume: data.videoVolume,
       video: data.videoFile ? { name: data.videoFile.name, type: data.videoFile.type, size: data.videoFile.size } : null,
       tracks: data.tracks.map(track => ({ id: track.id, name: track.name, armed: track.armed, muted: track.muted, visible: !!track.visible, volume: track.volume, pan: track.pan, color: track.color, effects: track.effects,
         clips: track.clips.map(clip => ({ name: clip.name, start: clip.start, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: clip.muted, gain: clip.gain, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut,
-          sampleRate: clip.sampleRate, sampleCount: clip.samples.length })) }))
+          sampleRate: clip.sampleRate, sampleCount: clip.samples.length, channels: clip.samplesRight ? 2 : 1 })) }))
     };
     const json = new TextEncoder().encode(JSON.stringify(manifest));
     const header = new ArrayBuffer(12), view = new DataView(header);
@@ -1530,7 +1543,7 @@ function projectBlob() {
     view.setUint32(8, json.length, true);
     const parts = [header, json];
     if (data.videoFile) parts.push(data.videoFile);
-    for (const track of data.tracks) for (const clip of track.clips) parts.push(clip.samples);
+    for (const track of data.tracks) for (const clip of track.clips) parts.push(clip.samples, ...(clip.samplesRight ? [clip.samplesRight] : []));
     return new Blob(parts, { type: 'application/octet-stream' });
 }
 async function saveProjectFile() {
@@ -1565,7 +1578,7 @@ async function openProject(file, handle = null) {
     const jsonLength = view.getUint32(8, true);
     if (jsonLength > bytes.byteLength - 12) throw new Error(tr('incomplete file'));
     const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
-    if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
+    if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(manifest.version) || !Array.isArray(manifest.tracks)) throw new Error(tr('unsupported version'));
     if (manifest.version >= 4 && !validLength(manifest.length)) throw new Error(tr('invalid length'));
     let position = 12 + jsonLength;
     const videoSize = manifest.video?.size || 0;
@@ -1579,13 +1592,10 @@ async function openProject(file, handle = null) {
       if ((manifest.version === 6 && !validEQ(track.eq)) || (manifest.version >= 7 && !validEffects(track.effects)) || (manifest.version >= 12 && !validPan(track.pan))) throw new Error(tr('invalid track'));
       return { effects: manifest.version >= 7 ? copyEffects(track) : manifest.version === 6 ? copyEffects({ eq: track.eq }) : [], id: track.id, name: track.name || tr('Track {n}', { n: track.id }), armed: !!track.armed, muted: !!track.muted, visible: manifest.version >= 5 ? track.visible : true, volume: manifest.version >= 2 ? track.volume : 1, pan: manifest.version >= 12 ? track.pan : 0, color: manifest.version >= 3 ? track.color : undefined,
         clips: track.clips.map(clip => {
-          const { sampleCount, sampleRate } = clip;
-          if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || sampleCount * 4 > bytes.byteLength - position) throw new Error(tr('invalid audio'));
-          const samples = new Float32Array(sampleCount);
-          for (let i = 0; i < sampleCount; i++) samples[i] = view.getFloat32(position + i * 4, true);
-          position += sampleCount * 4;
-          const buffer = audio.createBuffer(1, sampleCount, sampleRate);
-          buffer.copyToChannel(samples, 0);
+          const { sampleCount, sampleRate } = clip, count = manifest.version >= 13 ? clip.channels : 1;
+          if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || !Number.isFinite(sampleRate) || sampleRate < 3000 || sampleRate > 192000 || (count !== 1 && count !== 2) || sampleCount * 4 * count > bytes.byteLength - position) throw new Error(tr('invalid audio'));
+          const planes = Array.from({ length: count }, () => { const samples = new Float32Array(sampleCount); for (let i = 0; i < sampleCount; i++) samples[i] = view.getFloat32(position + i * 4, true); position += sampleCount * 4; return samples; });
+          const buffer = bufferFrom(audio, planes, sampleRate);
           if (!Number.isFinite(clip.start) || clip.start < 0 || !Number.isFinite(clip.trimStart) || clip.trimStart < 0 || !Number.isFinite(clip.trimEnd) || clip.trimEnd < 0 || clip.trimStart + clip.trimEnd >= buffer.duration) throw new Error(tr('invalid clip'));
           if (manifest.version >= 12 && (!validVolume(clip.gain) || !validFade(clip.fadeIn) || !validFade(clip.fadeOut))) throw new Error(tr('invalid clip'));
           const settings = manifest.version >= 12 ? { gain: clip.gain, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut } : { gain: 1, fadeIn: 0, fadeOut: 0 };
@@ -1601,6 +1611,7 @@ async function openProject(file, handle = null) {
     video.removeAttribute('src'); if (videoURL) video.src = videoURL; else video.load();
     showVideoName(importedVideo?.name);
     video.muted = !!manifest.videoMuted; setVideoGain(validVolume(manifest.videoVolume) ? manifest.videoVolume : 1);
+    await adaptClips(importedTracks);
     tracks.splice(0, tracks.length, ...importedTracks); nextId = manifest.nextId; timelineLength = manifest.version >= 4 ? manifest.length : null; restoreMarkers(manifest); clearHistory();
     rememberProjectFile(handle); showProjectName(handle?.name || file.name);
     renderTracks(); await saveProject(); status(tr('Project opened: {file}.', { file: file.name }));
@@ -1745,13 +1756,13 @@ function downloadBlob(blob, name) {
 const safeFileName = name => name.replace(/[\\/:*?"<>|]/g, '-').trim() || tr('Clip');
 // One clip as it plays: trimmed, with the playback fades, without the track volume.
 function clipWav(clip) {
-  const data = channel(clip.buffer), rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
-  const samples = data.slice(from, Math.min(data.length, from + Math.round(clipDuration(clip) * rate)));
+  const rate = clip.buffer.sampleRate, from = Math.round((clip.trimStart || 0) * rate);
+  const planes = clipChannels(clip.buffer).map(data => data.slice(from, Math.min(data.length, from + Math.round(clipDuration(clip) * rate)))), samples = planes[0];
   const fade = Math.min(FADE_SECONDS * rate, (samples.length - 1) / 2);
   // A downloaded clip stands alone: its own gain and fades, no crossfades with its neighbours.
   const fades = fitFades({ duration: samples.length - 1, in: Math.max(fade, (clip.fadeIn || 0) * rate), out: Math.max(fade, (clip.fadeOut || 0) * rate) }), gain = clip.gain ?? 1;
-  for (let i = 0; i < samples.length; i++) samples[i] *= fadeGain(i, fades) * gain;
-  return wavBytes([samples], rate);
+  for (const plane of planes) for (let i = 0; i < plane.length; i++) plane[i] *= fadeGain(i, fades) * gain;
+  return wavBytes(planes, rate);
 }
 // Minimal ZIP writer (stored, no compression: WAV barely compresses) for downloading every clip at once.
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
@@ -1825,11 +1836,12 @@ async function runExport() {
   $('export-summary').textContent = withVideoAudio ? tr('Reading the video audio…') : tr('Mixing…');
   $('export-ok').disabled = true;
   try {
-    const rate = kind === 'video' ? 48000 : context?.sampleRate || 48000;
+    const rate = PROJECT_RATE;
     const videoBuffer = withVideoAudio ? await decodeVideoAudio(rate) : null;
     if (job.canceled) return;
     $('export-summary').textContent = tr('Mixing…');
-    const mix = await renderMix(range.start, range.end, rate, kind === 'video' || videoBuffer?.numberOfChannels > 1 ? 2 : 1, videoBuffer);
+    const audible = tracks.filter(t => !t.muted && !isHidden(t)), stereo = kind === 'video' || videoBuffer?.numberOfChannels > 1 || audible.some(t => (t.pan ?? 0) !== 0 || t.clips.some(c => !c.muted && c.buffer.numberOfChannels > 1));
+    const mix = await renderMix(range.start, range.end, rate, stereo ? 2 : 1, videoBuffer);
     if (job.canceled) return;
     if (kind === 'video') { $('export-summary').textContent = tr('Writing the video…'); progress.value = 0; }
     const blob = kind === 'video' ? await muxVideo(mix, range, job) : wavBlob(mix);
